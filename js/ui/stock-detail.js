@@ -108,8 +108,8 @@ async function render() {
                 return `<tr>
                     <td>${snap.date}</td>
                     <td class="text-end">${formatPrice(snap.close_price)}</td>
-                    <td class="text-end">${formatPrice(snap.cost_price_snapshot)}</td>
-                    <td class="text-end">${snap.quantity_snapshot}</td>
+                    <td class="text-end d-none d-md-table-cell">${formatPrice(snap.cost_price_snapshot)}</td>
+                    <td class="text-end d-none d-md-table-cell">${snap.quantity_snapshot}</td>
                     <td class="text-end">${formatPrice(snap.market_value_snapshot)}</td>
                     <td class="text-end ${textClass(snap.profit_loss_pct_snapshot)}">${formatPrice(snap.profit_loss_pct_snapshot)}%</td>
                     <td><span class="${textClass(diff)}">${diffStr}</span></td>
@@ -120,7 +120,7 @@ async function render() {
             <div class="table-responsive mb-4">
                 <table class="table table-sm table-hover">
                     <thead class="table-light">
-                        <tr><th>日期</th><th class="text-end">收盘价</th><th class="text-end">成本价</th><th class="text-end">数量</th><th class="text-end">市值</th><th class="text-end">当日收益率</th><th>对比今日</th></tr>
+                        <tr><th>日期</th><th class="text-end">收盘价</th><th class="text-end d-none d-md-table-cell">成本价</th><th class="text-end d-none d-md-table-cell">数量</th><th class="text-end">市值</th><th class="text-end">收益率</th><th>对比今日</th></tr>
                     </thead>
                     <tbody>${rows}</tbody>
                 </table>
@@ -157,16 +157,16 @@ async function render() {
         }
 
         content.innerHTML = `
-        <div class="d-flex justify-content-between align-items-center mb-3">
-            <div class="d-flex align-items-center gap-2">
+        <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
                 ${siblingHtml}
-                <h4 class="mb-0">
-                    <span class="badge bg-light text-dark fs-6">${stock.code}</span> ${stock.name} ${statusBadge}
+                <h4 class="mb-0 fs-5 fs-md-4">
+                    <span class="badge bg-light text-dark">${stock.code}</span> ${stock.name} ${statusBadge}
                 </h4>
             </div>
-            <div>
-                <a href="analysis.html?id=${stock.id}" class="btn btn-info btn-sm"><i class="bi bi-lightbulb"></i> 智能分析</a>
-                <a href="trade-form.html?id=${stock.id}" class="btn btn-success btn-sm"><i class="bi bi-pencil-square"></i> 记录操作</a>
+            <div class="d-flex flex-wrap gap-1">
+                <a href="analysis.html?id=${stock.id}" class="btn btn-info btn-sm"><i class="bi bi-lightbulb"></i> 分析</a>
+                <a href="trade-form.html?id=${stock.id}" class="btn btn-success btn-sm"><i class="bi bi-pencil-square"></i> 操作</a>
                 <a href="stock-form.html?id=${stock.id}" class="btn btn-outline-warning btn-sm"><i class="bi bi-gear"></i> 编辑</a>
             </div>
         </div>

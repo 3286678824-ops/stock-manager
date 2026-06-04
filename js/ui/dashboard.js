@@ -131,14 +131,14 @@ function renderStockTable(stocks) {
             </td>
             <td class="text-end">${formatPrice(s.cost_price)}</td>
             <td class="text-end ${textClass(s.current_price, s.prev_close_price)} fw-bold">${formatPrice(s.current_price)}</td>
-            <td class="text-end text-muted">${formatPrice(s.prev_close_price)}</td>
+            <td class="text-end text-muted d-none d-md-table-cell">${formatPrice(s.prev_close_price)}</td>
             <td class="text-end ${textClass(dcPct)} fw-bold">${formatPct(dcPct)}</td>
             <td class="text-end">${s.quantity}</td>
             <td class="text-end">${formatPrice(mv)}</td>
             <td class="text-end ${textClass(pl)} fw-bold">${formatPrice(pl)}</td>
             <td class="text-end ${textClass(plPct)}">${formatPrice(plPct)}%</td>
-            <td class="text-end">${stopCell}</td>
-            <td class="text-end">${profitCell}</td>
+            <td class="text-end d-none d-md-table-cell">${stopCell}</td>
+            <td class="text-end d-none d-md-table-cell">${profitCell}</td>
             <td class="text-center text-nowrap">
                 <a href="trade-form.html?id=${s.id}" class="btn btn-sm btn-outline-success" title="记录操作"><i class="bi bi-pencil-square"></i></a>
                 <a href="stock-form.html?id=${s.id}" class="btn btn-sm btn-outline-warning" title="编辑"><i class="bi bi-gear"></i></a>
@@ -195,9 +195,9 @@ async function render(pid) {
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <strong><i class="bi bi-table"></i> 持仓列表</strong>
-                    <div>
-                        <button class="btn btn-sm btn-outline-secondary" id="snapshot-btn"><i class="bi bi-camera"></i> 保存快照</button>
-                        <button class="btn btn-sm btn-outline-primary" id="refresh-table-btn"><i class="bi bi-arrow-clockwise"></i> 刷新行情</button>
+                    <div class="d-flex flex-wrap gap-1 justify-content-end">
+                        <button class="btn btn-sm btn-outline-secondary" id="snapshot-btn"><i class="bi bi-camera"></i> 快照</button>
+                        <button class="btn btn-sm btn-outline-primary" id="refresh-table-btn"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
                         <a href="stock-form.html?pid=${active.id}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg"></i> 添加</a>
                     </div>
                 </div>
@@ -206,10 +206,10 @@ async function render(pid) {
                         <thead class="table-light">
                             <tr>
                                 <th style="width:80px">代码</th><th>名称</th>
-                                <th class="text-end">成本价</th><th class="text-end">现价</th><th class="text-end">昨收</th>
-                                <th class="text-end">今日涨跌</th><th class="text-end">数量</th><th class="text-end">市值</th>
+                                <th class="text-end">成本价</th><th class="text-end">现价</th><th class="text-end d-none d-md-table-cell">昨收</th>
+                                <th class="text-end">涨跌</th><th class="text-end">数量</th><th class="text-end">市值</th>
                                 <th class="text-end">盈亏</th><th class="text-end">收益率</th>
-                                <th class="text-end" style="width:70px">止损价</th><th class="text-end" style="width:70px">止盈价</th>
+                                <th class="text-end d-none d-md-table-cell" style="width:70px">止损价</th><th class="text-end d-none d-md-table-cell" style="width:70px">止盈价</th>
                                 <th class="text-center">操作</th>
                             </tr>
                         </thead>
