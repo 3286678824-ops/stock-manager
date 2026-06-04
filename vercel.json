@@ -1,0 +1,14 @@
+{
+    "framework": null,
+    "outputDirectory": ".",
+    "buildCommand": "",
+    "installCommand": "",
+    "rewrites": [
+        { "source": "/stock-detail.html", "destination": "/stock-detail.html" },
+        { "source": "/stock-form.html", "destination": "/stock-form.html" },
+        { "source": "/trade-form.html", "destination": "/trade-form.html" },
+        { "source": "/trades.html", "destination": "/trades.html" },
+        { "source": "/portfolios.html", "destination": "/portfolios.html" },
+        { "source": "/analysis.html", "destination": "/analysis.html" }
+    ]
+}
