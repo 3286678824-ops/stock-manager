@@ -120,9 +120,13 @@ Deno.serve(async (req) => {
             return json({ ok: true, updated: 0 });
         }
 
-        // Batch fetch from Sina
+        const now = new Date().toISOString();
+        const today = todayDateStr();
+        const updated: { id: number; name: string; current_price: number; prev_close_price: number; }[] = [];
+
+        // 1. Batch fetch from Sina
         const codes = stocks.map(s => marketPrefix(s.code)).join(",");
-        const updatedIds = new Set();
+        const sinaResults: (ReturnType<typeof parseSinaLine> | null)[] = new Array(stocks.length).fill(null);
 
         try {
             const resp = await fetch(SINA_URL + codes, { headers: SINA_HEADERS });
@@ -134,58 +138,84 @@ Deno.serve(async (req) => {
             for (let i = 0; i < stocks.length && i < lines.length; i++) {
                 const info = parseSinaLine(lines[i]);
                 if (info && info.current_price > 0) {
-                    await supabase.from("stocks").update({
-                        name: info.name,
-                        current_price: info.current_price,
-                        prev_close_price: info.pre_close,
-                        updated_at: new Date().toISOString(),
-                    }).eq("id", stocks[i].id);
-                    updatedIds.add(stocks[i].id);
+                    sinaResults[i] = info;
                 }
             }
         } catch (e) {
             console.error("Sina batch failed:", e);
         }
 
-        // Fallback for stocks not updated by Sina
-        for (const stock of stocks) {
-            if (updatedIds.has(stock.id)) continue;
-
-            let info = await fetchEastmoney(stock.code);
-            if (!info) info = await fetchTonghuashun(stock.code);
-
-            if (info && info.current_price > 0) {
-                await supabase.from("stocks").update({
-                    name: info.name,
-                    current_price: info.current_price,
-                    prev_close_price: info.pre_close || stock.prev_close_price,
-                    updated_at: new Date().toISOString(),
-                }).eq("id", stock.id);
-                updatedIds.add(stock.id);
+        // Collect Sina results
+        const missedStocks: typeof stocks = [];
+        for (let i = 0; i < stocks.length; i++) {
+            if (sinaResults[i]) {
+                updated.push({
+                    id: stocks[i].id,
+                    name: sinaResults[i]!.name,
+                    current_price: sinaResults[i]!.current_price,
+                    prev_close_price: sinaResults[i]!.pre_close,
+                });
+            } else {
+                missedStocks.push(stocks[i]);
             }
         }
 
-        // Save daily snapshots for updated stocks
-        const today = todayDateStr();
-        for (const stock of stocks) {
-            if (!updatedIds.has(stock.id) || stock.current_price <= 0) continue;
-            // Upsert snapshot
-            const mv = Math.round(stock.current_price * stock.quantity * 100) / 100;
-            const cv = Math.round(stock.cost_price * stock.quantity * 100) / 100;
-            const plPct = stock.cost_price > 0
-                ? Math.round((stock.current_price - stock.cost_price) / stock.cost_price * 10000) / 100
-                : 0;
-
-            await supabase.from("daily_snapshots").upsert({
-                stock_id: stock.id,
-                date: today,
-                close_price: stock.current_price,
-                cost_price_snapshot: stock.cost_price,
-                quantity_snapshot: stock.quantity,
-                market_value_snapshot: mv,
-                profit_loss_pct_snapshot: plPct,
-            }, { onConflict: "stock_id, date" });
+        // 2. Parallel fallback for missed stocks
+        if (missedStocks.length > 0) {
+            const fallbackResults = await Promise.all(
+                missedStocks.map(async (stock) => {
+                    let info = await fetchEastmoney(stock.code);
+                    if (!info) info = await fetchTonghuashun(stock.code);
+                    if (info && info.current_price > 0) {
+                        return {
+                            id: stock.id,
+                            name: info.name,
+                            current_price: info.current_price,
+                            prev_close_price: info.pre_close || stock.prev_close_price,
+                        };
+                    }
+                    return null;
+                })
+            );
+            for (const r of fallbackResults) {
+                if (r) updated.push(r);
+            }
         }
+
+        // 3. Parallel DB updates
+        await Promise.all(
+            updated.map(u =>
+                supabase.from("stocks").update({
+                    name: u.name,
+                    current_price: u.current_price,
+                    prev_close_price: u.prev_close_price,
+                    updated_at: now,
+                }).eq("id", u.id)
+            )
+        );
+
+        // 4. Parallel snapshot upserts
+        const updatedIds = new Set(updated.map(u => u.id));
+        await Promise.all(
+            stocks
+                .filter(s => updatedIds.has(s.id) && s.current_price > 0)
+                .map(s => {
+                    const price = updated.find(u => u.id === s.id)!;
+                    const mv = Math.round(price.current_price * s.quantity * 100) / 100;
+                    const plPct = s.cost_price > 0
+                        ? Math.round((price.current_price - s.cost_price) / s.cost_price * 10000) / 100
+                        : 0;
+                    return supabase.from("daily_snapshots").upsert({
+                        stock_id: s.id,
+                        date: today,
+                        close_price: price.current_price,
+                        cost_price_snapshot: s.cost_price,
+                        quantity_snapshot: s.quantity,
+                        market_value_snapshot: mv,
+                        profit_loss_pct_snapshot: plPct,
+                    }, { onConflict: "stock_id, date" });
+                })
+        );
 
         return json({ ok: true, updated: updatedIds.size });
     } catch (e) {
