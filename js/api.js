@@ -5,15 +5,30 @@ import supabase from './supabase-client.js';
 
 const FUNCTIONS_BASE = supabase.supabaseUrl + '/functions/v1';
 
+// Retry wrapper for intermittent network failures (mobile / cross-border)
+async function withRetry(fn, maxRetries = 3) {
+    for (let i = 0; i < maxRetries; i++) {
+        try {
+            return await fn();
+        } catch (err) {
+            if (i === maxRetries - 1) throw err;
+            // Only retry on fetch/network errors, not validation errors
+            const msg = (err?.message || '').toLowerCase();
+            if (msg.includes('duplicate') || msg.includes('violat') || msg.includes('constraint')) throw err;
+            await new Promise(r => setTimeout(r, 500 * (i + 1)));
+        }
+    }
+}
+
 async function callFunction(name, body = {}) {
-    const resp = await fetch(`${FUNCTIONS_BASE}/${name}`, {
+    const resp = await withRetry(() => fetch(`${FUNCTIONS_BASE}/${name}`, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${supabase.supabaseKey}`,
         },
         body: JSON.stringify(body),
-    });
+    }));
     if (!resp.ok) {
         const err = await resp.json().catch(() => ({ error: resp.statusText }));
         throw new Error(err.error || resp.statusText);
@@ -98,7 +113,7 @@ export async function updateStock(id, data) {
     if (data.takeProfitPrice !== undefined) updates.take_profit_price = data.takeProfitPrice;
     updates.updated_at = new Date().toISOString();
 
-    const { error } = await supabase.from('stocks').update(updates).eq('id', id);
+    const { error } = await withRetry(() => supabase.from('stocks').update(updates).eq('id', id));
     if (error) throw error;
 }
 
@@ -134,13 +149,13 @@ export async function getAllTrades(page = 1, perPage = 30) {
 }
 
 export async function createTradeLog(data) {
-    const { data: log, error } = await supabase.from('trade_logs').insert({
+    const { data: log, error } = await withRetry(() => supabase.from('trade_logs').insert({
         stock_id: data.stockId,
         action: data.action,
         price: data.price,
         quantity: data.quantity,
         note: data.note || '',
-    }).select().single();
+    }).select().single());
     if (error) throw error;
     return log;
 }
