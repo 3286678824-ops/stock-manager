@@ -51,8 +51,13 @@ export async function getPortfolioById(id) {
 }
 
 export async function createPortfolio(name, description = '') {
-    const { data, error } = await supabase.from('portfolios').insert({ name, description }).select().single();
-    if (error) throw error;
+    const { data, error } = await withRetry(() => supabase.from('portfolios').insert({ name, description }).select().single());
+    if (error) {
+        if (error.message && error.message.toLowerCase().includes('duplicate')) {
+            throw new Error(`分组名称 "${name}" 已存在，请更换名称`);
+        }
+        throw error;
+    }
     return data;
 }
 
@@ -84,19 +89,19 @@ export async function getStockById(id) {
 }
 
 export async function createStock(data) {
-    const { data: stock, error } = await supabase.from('stocks').insert({
+    const { data: stock, error } = await withRetry(() => supabase.from('stocks').insert({
         portfolio_id: data.portfolioId,
         code: data.code,
         name: data.name,
         market: data.market,
         cost_price: data.costPrice,
-        current_price: data.currentPrice || 0,
-        prev_close_price: data.prevClosePrice || 0,
+        current_price: data.currentPrice || data.prevClosePrice || 0,
+        prev_close_price: data.prevClosePrice || data.currentPrice || 0,
         quantity: data.quantity,
         status: data.status || 'holding',
         stop_loss_price: data.stopLossPrice || null,
         take_profit_price: data.takeProfitPrice || null,
-    }).select().single();
+    }).select().single());
     if (error) throw error;
     return stock;
 }

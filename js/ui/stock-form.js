@@ -149,6 +149,19 @@ function bindForm(editing, stock) {
         };
 
         if (!data.code) { flash('请输入股票代码', 'danger'); return; }
+
+        // Auto-fetch stock name & price for new stocks before validation
+        if (!editing) {
+            try {
+                const priceInfo = await fetchStockPrice(data.code);
+                if (priceInfo.current_price) data.currentPrice = priceInfo.current_price;
+                if (priceInfo.prev_close_price) data.prevClosePrice = priceInfo.prev_close_price;
+                if (priceInfo.name && !data.name) data.name = priceInfo.name;
+            } catch (e) {
+                console.warn('获取实时价格失败，将使用默认值:', e.message);
+            }
+        }
+
         if (!data.name) { flash('请输入股票名称', 'danger'); return; }
 
         try {
@@ -192,7 +205,14 @@ function bindForm(editing, stock) {
             }
             setTimeout(() => { location.href = `index.html?pid=${data.portfolioId}`; }, 500);
         } catch (e) {
-            flash('操作失败: ' + e.message, 'danger');
+            const msg = (e.message || '');
+            if (msg.toLowerCase().includes('duplicate') || msg.includes('uq_portfolio_code')) {
+                flash(`该分组中已存在股票 "${data.code}"，请勿重复添加`, 'danger');
+            } else if (msg.includes('fetch') || msg.includes('network') || msg.includes('NetworkError')) {
+                flash('网络连接失败，请检查网络后重试', 'danger');
+            } else {
+                flash('操作失败: ' + msg, 'danger');
+            }
         }
     });
 }

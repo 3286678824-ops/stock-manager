@@ -70,6 +70,22 @@ async function render() {
                 <small class="text-muted">区间位置</small><div class="fw-bold">${result.position_in_range}%<br><small class="text-muted">${formatPrice(result.recent_low)}-${formatPrice(result.recent_high)}</small></div></div></div></div>
         </div>`;
 
+        // Risk assessment card
+        const risk = result.risk;
+        html += `<div class="card mb-4 border-${risk.badgeClass}"><div class="card-header bg-${risk.badgeClass} text-white d-flex justify-content-between align-items-center">
+            <strong><i class="bi bi-exclamation-triangle"></i> 风险评估: ${risk.level}</strong>
+            <span>${result.position_status}</span>
+        </div><div class="card-body">
+            <p class="mb-2"><strong>建议：</strong>${risk.suggestion}</p>`;
+        if (risk.warnings.length > 0) {
+            html += '<ul class="mb-0 small">';
+            for (const w of risk.warnings) {
+                html += `<li class="text-danger">${w}</li>`;
+            }
+            html += '</ul>';
+        }
+        html += '</div></div>';
+
         // Support & Resistance
         html += '<div class="row g-3 mb-4"><div class="col-md-6">';
         html += '<div class="card"><div class="card-header"><strong><i class="bi bi-shield-check"></i> 支撑位</strong></div><div class="card-body">';
@@ -117,22 +133,60 @@ async function render() {
         }
         html += '</div></div></div></div>';
 
-        // Stop-loss suggestion
+        // Multi-layer stop-loss
         const sl = result.stop_loss;
-        html += `<div class="card mb-4 border-danger"><div class="card-header bg-danger text-white"><strong><i class="bi bi-shield-minus"></i> 止损建议: ${formatPrice(sl.suggested)}</strong></div><div class="card-body">`;
-        html += `<p class="small text-muted">ATR: ${formatPrice(sl.atr)} | ATR×2止损: ${formatPrice(sl.atr_stop)}</p>`;
-        for (const d of sl.details) {
-            html += `<div class="d-flex justify-content-between small mb-1"><span>${d.method}</span><span class="fw-bold text-danger">${formatPrice(d.price)}</span></div><div class="text-muted small mb-2">${d.reason}</div>`;
-        }
-        html += `<form id="apply-stop-form" class="mt-2"><input type="hidden" name="price" value="${sl.suggested}"><button type="submit" class="btn btn-danger btn-sm">应用止损价 ${formatPrice(sl.suggested)}</button></form></div></div>`;
+        const slAmplitude = ((stock.current_price - sl.suggested) / stock.current_price * 100).toFixed(1);
+        html += `<div class="card mb-4 border-danger"><div class="card-header bg-danger text-white"><strong><i class="bi bi-shield-minus"></i> 多层止损体系</strong></div><div class="card-body">`;
 
-        // Take-profit suggestion
-        const tp = result.take_profit;
-        html += `<div class="card mb-4 border-success"><div class="card-header bg-success text-white"><strong><i class="bi bi-shield-plus"></i> 止盈建议: ${formatPrice(tp.suggested)}</strong></div><div class="card-body">`;
-        for (const d of tp.details) {
-            html += `<div class="d-flex justify-content-between small mb-1"><span>${d.method}</span><span class="fw-bold text-success">${formatPrice(d.price)}</span></div><div class="text-muted small mb-2">${d.reason}</div>`;
+        // Recommended stop
+        html += `<div class="alert alert-danger py-2 mb-3"><strong>推荐执行价: ${formatPrice(sl.suggested)}</strong> (止损幅度 ${slAmplitude}%)</div>`;
+
+        // Layer table
+        html += '<table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>层级</th><th>方法</th><th class="text-end">止损价</th><th>说明</th></tr></thead><tbody>';
+        for (const l of sl.layers) {
+            const isRecommended = l.price === sl.suggested;
+            const rowClass = isRecommended ? 'table-danger' : '';
+            const badge = isRecommended ? ' <span class="badge bg-danger">推荐</span>' : '';
+            html += `<tr class="${rowClass}">
+                <td><span class="badge bg-secondary">${l.level}</span></td>
+                <td>${l.method}${badge}</td>
+                <td class="text-end fw-bold">${formatPrice(l.price)}</td>
+                <td class="small text-muted">${l.reason}</td>
+            </tr>`;
         }
-        html += `<form id="apply-profit-form" class="mt-2"><input type="hidden" name="price" value="${tp.suggested}"><button type="submit" class="btn btn-success btn-sm">应用止盈价 ${formatPrice(tp.suggested)}</button></form></div></div>`;
+        html += '</tbody></table>';
+
+        // Trend warnings
+        if (sl.trend_warnings && sl.trend_warnings.length > 0) {
+            html += '<div class="mt-3">';
+            for (const w of sl.trend_warnings) {
+                html += `<p class="text-warning small mb-1"><i class="bi bi-exclamation-circle"></i> ${w}</p>`;
+            }
+            html += '</div>';
+        }
+
+        html += `<form id="apply-stop-form" class="mt-2 d-flex gap-2"><input type="hidden" name="price" value="${sl.suggested}"><button type="submit" class="btn btn-danger btn-sm">应用推荐止损价 ${formatPrice(sl.suggested)}</button></form></div></div>`;
+
+        // Multi-tier take-profit
+        const tp = result.take_profit;
+        html += `<div class="card mb-4 border-success"><div class="card-header bg-success text-white"><strong><i class="bi bi-shield-plus"></i> 分级止盈体系</strong></div><div class="card-body">`;
+
+        html += '<table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>目标</th><th class="text-end">价格</th><th>涨幅</th><th>依据</th><th>操作建议</th></tr></thead><tbody>';
+        for (const t of tp.tiers) {
+            const gainPct = ((t.price - stock.current_price) / stock.current_price * 100).toFixed(1);
+            const isFirst = t === tp.tiers[0];
+            const rowClass = isFirst ? 'table-success' : '';
+            html += `<tr class="${rowClass}">
+                <td><span class="badge bg-${isFirst ? 'success' : 'info'}">${t.label}</span></td>
+                <td class="text-end fw-bold text-success">${formatPrice(t.price)}</td>
+                <td class="text-success">+${gainPct}%</td>
+                <td class="small text-muted">${t.reason}</td>
+                <td class="small">${t.action || ''}</td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+
+        html += `<form id="apply-profit-form" class="mt-2 d-flex gap-2"><input type="hidden" name="price" value="${tp.suggested}"><button type="submit" class="btn btn-success btn-sm">应用第一目标止盈 ${formatPrice(tp.suggested)}</button></form></div></div>`;
 
         html += `<div class="text-muted small mt-2">分析基于最近 ${result.data_days} 个交易日数据</div>`;
 

@@ -102,7 +102,7 @@ function bindEvents(portfolios) {
             flash(`分组 "${name}" 已创建`);
             render();
         } catch (err) {
-            flash('创建失败: ' + err.message, 'danger');
+            flash('创建失败: ' + (err.message || '网络错误，请重试'), 'danger');
         }
     });
 
