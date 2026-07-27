@@ -36,6 +36,51 @@ async function callFunction(name, body = {}) {
     return resp;
 }
 
+// ── Batch fetch: all portfolios + all stocks in 2 parallel queries ──
+
+const CACHE_KEY = 'stock_manager_cache';
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function readCache() {
+    try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        const cache = JSON.parse(raw);
+        if (Date.now() - cache.ts > CACHE_TTL) return null;
+        return cache.data;
+    } catch { return null; }
+}
+
+function writeCache(data) {
+    try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+    } catch { /* quota exceeded, ignore */ }
+}
+
+export async function getAllData({ withCache = false, onFresh } = {}) {
+    if (withCache) {
+        const cached = readCache();
+        if (cached) {
+            // Fire fresh fetch in background
+            getAllData().then(fresh => {
+                writeCache(fresh);
+                if (onFresh) onFresh(fresh);
+            }).catch(() => {});
+            return cached;
+        }
+    }
+
+    const [portfolios, stocks] = await Promise.all([
+        supabase.from('portfolios').select('*').order('created_at', { ascending: true }),
+        supabase.from('stocks').select('*').order('status', { ascending: true }).order('code', { ascending: true }),
+    ]);
+    if (portfolios.error) throw portfolios.error;
+    if (stocks.error) throw stocks.error;
+    const data = { portfolios: portfolios.data, stocks: stocks.data };
+    writeCache(data);
+    return data;
+}
+
 // ── Portfolios ─────────────────────────────────────────
 
 export async function getPortfolios() {
@@ -188,6 +233,79 @@ export async function fetchKline(code, days = 60) {
     return resp.json();
 }
 
+// Cached kline fetch — tries direct fetch first (fast), falls back to Edge Function (slow)
+export async function fetchKlineCached(code, days = 60) {
+    const cacheKey = `kline_${code}_${days}`;
+    try {
+        const raw = localStorage.getItem(cacheKey);
+        if (raw) {
+            const cache = JSON.parse(raw);
+            const ttl = isMarketOpen() ? 5 * 60 * 1000 : 60 * 60 * 1000;
+            if (Date.now() - cache.ts < ttl) return cache.data;
+        }
+    } catch { /* ignore */ }
+
+    // Try direct fetch from Sina (fast — no cross-border hop)
+    let data = await fetchKlineDirect(code, days);
+    if (!data) {
+        // Fallback to Edge Function
+        data = await fetchKline(code, days);
+    }
+
+    try {
+        localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
+    } catch { /* quota exceeded */ }
+    return data;
+}
+
+async function fetchKlineDirect(code, days = 60) {
+    const marketMap = { sh: 'sh', sz: 'sz', bj: 'bj' };
+    const market = marketMap[code.match(/^(8|4)/) || code.match(/^92/) ? 'bj' : code.match(/^(6|9)/) ? 'sh' : 'sz'] || 'sz';
+    const prefix = (market === 'sh' ? 'sh' : market === 'bj' ? 'bj' : 'sz') + code;
+
+    try {
+        // Eastmoney API — usually has CORS
+        const marketCode = (market === 'sh' ? '1' : '0') + '.' + code;
+        const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?${new URLSearchParams({
+            secid: marketCode,
+            fields1: 'f1,f2,f3,f4,f5,f6',
+            fields2: 'f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61',
+            klt: '101',
+            fqt: '1',
+            end: '20500101',
+            lmt: String(days),
+        })}`;
+
+        const resp = await fetch(url);
+        if (!resp.ok) return null;
+        const json = await resp.json();
+        if (!json.data || !json.data.klines) return null;
+
+        return json.data.klines.map(line => {
+            const parts = line.split(',');
+            return {
+                date: parts[0] || '',
+                open: parseFloat(parts[1]) || 0,
+                close: parseFloat(parts[2]) || 0,
+                high: parseFloat(parts[3]) || 0,
+                low: parseFloat(parts[4]) || 0,
+                volume: parseInt(parts[5]) || 0,
+            };
+        });
+    } catch {
+        return null;
+    }
+}
+
+function isMarketOpen() {
+    const now = new Date();
+    const day = now.getDay();
+    if (day === 0 || day === 6) return false;
+    const h = now.getHours(), m = now.getMinutes();
+    const t = h * 60 + m;
+    return t >= 570 && t <= 900; // 9:30 - 15:00 Beijing time (UTC+8, but using local)
+}
+
 export async function refreshStockPrices() {
     const resp = await callFunction('refresh-prices');
     return resp.json();
@@ -196,6 +314,20 @@ export async function refreshStockPrices() {
 export async function saveSnapshots() {
     const resp = await callFunction('save-snapshots');
     return resp.json();
+}
+
+// ── Daily Notes ────────────────────────────────────────
+
+export async function getDailyNote(date) {
+    const { data, error } = await supabase.from('daily_notes').select('*').eq('date', date).single();
+    if (error && error.code !== 'PGRST116') throw error;
+    return data;
+}
+
+export async function saveDailyNote(date, content) {
+    const { data, error } = await supabase.from('daily_notes').upsert({ date, content, updated_at: new Date().toISOString() }).select().single();
+    if (error) throw error;
+    return data;
 }
 
 export async function exportCsv() {
