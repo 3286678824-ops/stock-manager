@@ -1,6 +1,6 @@
 // Technical analysis page
 
-import { getStockById, fetchKline, updateStock } from '../api.js';
+import { getStockById, fetchKlineCached, updateStock } from '../api.js';
 import { analyze } from '../analysis.js';
 import { formatPrice, textClass } from '../utils.js';
 
@@ -23,16 +23,19 @@ async function render() {
         return;
     }
 
-    content.innerHTML = '获取K线数据<span class="spin ms-2"></span>';
+    content.innerHTML = '获取数据<span class="spin ms-2"></span>';
 
     try {
         const stock = await getStockById(id);
-        const klines = await fetchKline(stock.code, 60);
+
+        // Show loading state then fetch kline (cached if available)
+        content.innerHTML = `获取 ${stock.name}(${stock.code}) K线数据<span class="spin ms-2"></span>`;
+        const klines = await fetchKlineCached(stock.code, 60);
 
         if (!Array.isArray(klines) || klines.length < 14) {
             content.innerHTML = `<div class="alert alert-warning">
                 数据不足（仅获取到${Array.isArray(klines) ? klines.length : 0}个交易日），至少需要14个交易日。
-                <br><a href="stock-detail.html?id=${stock.id}" class="btn btn-sm btn-secondary mt-2">&larr; 返回</a>
+                <br><a href="stock-detail?id=${stock.id}" class="btn btn-sm btn-secondary mt-2">&larr; 返回</a>
             </div>`;
             return;
         }
@@ -41,7 +44,7 @@ async function render() {
 
         if (result.error) {
             content.innerHTML = `<div class="alert alert-warning">${result.error}<br>
-                <a href="stock-detail.html?id=${stock.id}" class="btn btn-sm btn-secondary mt-2">&larr; 返回</a></div>`;
+                <a href="stock-detail?id=${stock.id}" class="btn btn-sm btn-secondary mt-2">&larr; 返回</a></div>`;
             return;
         }
 
@@ -51,7 +54,48 @@ async function render() {
                 <span class="badge bg-light text-dark fs-6">${stock.code}</span> ${stock.name}
                 <span class="badge bg-${result.trend_class}">${result.trend}</span>
             </h4>
-            <a href="stock-detail.html?id=${stock.id}" class="btn btn-secondary btn-sm">&larr; 返回详情</a>
+            <a href="stock-detail?id=${stock.id}" class="btn btn-secondary btn-sm">&larr; 返回详情</a>
+        </div>`;
+
+        // Price & Stop/Profit comparison card
+        const curStop = stock.stop_loss_price ? formatPrice(stock.stop_loss_price) : '<span class="text-muted">未设</span>';
+        const curProfit = stock.take_profit_price ? formatPrice(stock.take_profit_price) : '<span class="text-muted">未设</span>';
+        const slDiff = stock.stop_loss_price ? ((result.stop_loss.suggested - stock.stop_loss_price) / stock.stop_loss_price * 100).toFixed(1) : null;
+        const tpDiff = stock.take_profit_price ? ((result.take_profit.suggested - stock.take_profit_price) / stock.take_profit_price * 100).toFixed(1) : null;
+
+        html += `<div class="card mb-4">
+            <div class="card-header"><strong><i class="bi bi-arrow-left-right"></i> 现价与止盈止损对照</strong></div>
+            <div class="card-body">
+                <div class="row g-3 text-center">
+                    <div class="col-md-3 col-6">
+                        <small class="text-muted">现价</small>
+                        <div class="fs-4 fw-bold text-primary">${formatPrice(stock.current_price)}</div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <small class="text-muted">成本价</small>
+                        <div class="fs-5 fw-bold">${formatPrice(stock.cost_price)}</div>
+                        <small class="${textClass(stock.current_price, stock.cost_price)}">${((stock.current_price - stock.cost_price) / stock.cost_price * 100).toFixed(1)}%</small>
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <small class="text-muted">止损价</small>
+                        <div class="d-flex justify-content-center align-items-center gap-1 flex-wrap">
+                            <span class="badge bg-light text-dark">当前 ${curStop}</span>
+                            <i class="bi bi-arrow-right text-muted"></i>
+                            <span class="badge bg-danger">建议 ${formatPrice(result.stop_loss.suggested)}</span>
+                        </div>
+                        ${slDiff !== null ? `<small class="${slDiff > 0 ? 'text-danger' : 'text-success'}">建议${slDiff > 0 ? '上调' : '下调'} ${Math.abs(slDiff)}%</small>` : ''}
+                    </div>
+                    <div class="col-md-3 col-6">
+                        <small class="text-muted">止盈价</small>
+                        <div class="d-flex justify-content-center align-items-center gap-1 flex-wrap">
+                            <span class="badge bg-light text-dark">当前 ${curProfit}</span>
+                            <i class="bi bi-arrow-right text-muted"></i>
+                            <span class="badge bg-success">建议 ${formatPrice(result.take_profit.suggested)}</span>
+                        </div>
+                        ${tpDiff !== null ? `<small class="${tpDiff > 0 ? 'text-success' : 'text-danger'}">建议${tpDiff > 0 ? '上调' : '下调'} ${Math.abs(tpDiff)}%</small>` : ''}
+                    </div>
+                </div>
+            </div>
         </div>`;
 
         // Key indicators
