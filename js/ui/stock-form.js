@@ -74,17 +74,25 @@ async function render() {
             <label class="form-label">股票名称</label>
             <input type="text" class="form-control" name="name" value="${stock ? stock.name : ''}" required placeholder="自动获取或手动输入">
         </div>
-        <div class="col-sm-4 col-12">
+        <div id="cost-qty-row" class="col-12"><div class="row g-3">
+        <div class="col-sm-6 col-12">
             <label class="form-label"><span id="cost-label-text">成本价</span> <span class="text-danger" id="cost-required">*</span></label>
             <input type="number" step="0.01" class="form-control" name="cost_price" value="${stock ? stock.cost_price : ''}" id="cost-price-input">
         </div>
-        <div class="col-sm-4 col-12">
+        <div class="col-sm-6 col-12">
             <label class="form-label"><span id="qty-label-text">数量（股）</span> <span class="text-danger" id="qty-required">*</span></label>
             <input type="number" step="1" class="form-control" name="quantity" value="${stock ? stock.quantity : '100'}" id="qty-input">
         </div>
-        <div class="col-sm-4 col-12">
+        </div></div>
+        <div class="col-sm-6 col-12">
             <label class="form-label">状态</label>
             <select class="form-select" name="status" id="status-select">${statusOpts}</select>
+        </div>
+        <div id="watching-note" class="col-12" style="display:none">
+            <div class="alert alert-info py-2 mb-0"><i class="bi bi-eye"></i> 关注模式：无需填写数量和成本价，添加后可设置止盈止损提醒</div>
+        </div>
+        <div id="sold-note" class="col-12" style="display:none">
+            <div class="alert alert-secondary py-2 mb-0"><i class="bi bi-archive"></i> 已清仓：数量和成本价已清零</div>
         </div>
         <div class="col-sm-6 col-12">
             <label class="form-label">止损价</label>
@@ -117,21 +125,31 @@ function bindForm(editing, stock) {
     const costLabel = document.getElementById('cost-label-text');
 
     function updateFieldsForStatus(status) {
-        if (status === 'watching' || status === 'sold') {
+        const costQtyRow = document.getElementById('cost-qty-row');
+        const watchingNote = document.getElementById('watching-note');
+        const soldNote = document.getElementById('sold-note');
+
+        if (status === 'watching') {
+            costQtyRow.style.display = 'none';
+            watchingNote.style.display = '';
+            soldNote.style.display = 'none';
             qtyInput.value = '0';
             qtyInput.required = false;
-            qtyRequired.style.display = 'none';
-            qtyLabel.textContent = status === 'watching' ? '数量（自动为0）' : '数量（已清仓）';
+            costInput.value = '0';
             costInput.required = false;
-            costRequired.style.display = 'none';
-            costLabel.textContent = status === 'watching' ? '目标买入价（可选）' : '成本价（已清仓）';
+        } else if (status === 'sold') {
+            costQtyRow.style.display = 'none';
+            watchingNote.style.display = 'none';
+            soldNote.style.display = '';
+            qtyInput.value = '0';
+            qtyInput.required = false;
+            costInput.required = false;
         } else {
+            costQtyRow.style.display = '';
+            watchingNote.style.display = 'none';
+            soldNote.style.display = 'none';
             qtyInput.required = true;
-            qtyRequired.style.display = '';
-            qtyLabel.textContent = '数量（股）';
             costInput.required = true;
-            costRequired.style.display = '';
-            costLabel.textContent = '成本价';
             if (!qtyInput.value || qtyInput.value === '0') qtyInput.value = '100';
         }
     }
