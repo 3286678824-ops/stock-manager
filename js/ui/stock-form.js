@@ -39,7 +39,7 @@ async function render() {
     }
 
     if (portfolios.length === 0) {
-        content.innerHTML = `<div class="alert alert-warning">请先<a href="portfolios.html">创建分组</a></div>`;
+        content.innerHTML = `<div class="alert alert-warning">请先<a href="portfolios">创建分组</a></div>`;
         return;
     }
 
@@ -75,16 +75,16 @@ async function render() {
             <input type="text" class="form-control" name="name" value="${stock ? stock.name : ''}" required placeholder="自动获取或手动输入">
         </div>
         <div class="col-sm-4 col-12">
-            <label class="form-label">成本价 <span class="text-danger">*</span></label>
-            <input type="number" step="0.01" class="form-control" name="cost_price" value="${stock ? stock.cost_price : ''}" required>
+            <label class="form-label"><span id="cost-label-text">成本价</span> <span class="text-danger" id="cost-required">*</span></label>
+            <input type="number" step="0.01" class="form-control" name="cost_price" value="${stock ? stock.cost_price : ''}" id="cost-price-input">
         </div>
         <div class="col-sm-4 col-12">
-            <label class="form-label">数量（股） <span class="text-danger">*</span></label>
-            <input type="number" step="1" class="form-control" name="quantity" value="${stock ? stock.quantity : '100'}" required>
+            <label class="form-label"><span id="qty-label-text">数量（股）</span> <span class="text-danger" id="qty-required">*</span></label>
+            <input type="number" step="1" class="form-control" name="quantity" value="${stock ? stock.quantity : '100'}" id="qty-input">
         </div>
         <div class="col-sm-4 col-12">
             <label class="form-label">状态</label>
-            <select class="form-select" name="status">${statusOpts}</select>
+            <select class="form-select" name="status" id="status-select">${statusOpts}</select>
         </div>
         <div class="col-sm-6 col-12">
             <label class="form-label">止损价</label>
@@ -108,6 +108,39 @@ function bindForm(editing, stock) {
     const lookupBtn = document.getElementById('lookup-btn');
     const codeInput = form.querySelector('[name="code"]');
     const nameInput = form.querySelector('[name="name"]');
+    const statusSelect = document.getElementById('status-select');
+    const qtyInput = document.getElementById('qty-input');
+    const costInput = document.getElementById('cost-price-input');
+    const qtyRequired = document.getElementById('qty-required');
+    const costRequired = document.getElementById('cost-required');
+    const qtyLabel = document.getElementById('qty-label-text');
+    const costLabel = document.getElementById('cost-label-text');
+
+    function updateFieldsForStatus(status) {
+        if (status === 'watching' || status === 'sold') {
+            qtyInput.value = '0';
+            qtyInput.required = false;
+            qtyRequired.style.display = 'none';
+            qtyLabel.textContent = status === 'watching' ? '数量（自动为0）' : '数量（已清仓）';
+            costInput.required = false;
+            costRequired.style.display = 'none';
+            costLabel.textContent = status === 'watching' ? '目标买入价（可选）' : '成本价（已清仓）';
+        } else {
+            qtyInput.required = true;
+            qtyRequired.style.display = '';
+            qtyLabel.textContent = '数量（股）';
+            costInput.required = true;
+            costRequired.style.display = '';
+            costLabel.textContent = '成本价';
+            if (!qtyInput.value || qtyInput.value === '0') qtyInput.value = '100';
+        }
+    }
+
+    // Init on load
+    updateFieldsForStatus(statusSelect.value);
+
+    // Listen for status changes
+    statusSelect.addEventListener('change', () => updateFieldsForStatus(statusSelect.value));
 
     // Lookup stock name when code entered
     if (lookupBtn) {
@@ -203,7 +236,7 @@ function bindForm(editing, stock) {
                 }
                 flash(`成功添加 ${data.name}(${data.code})`);
             }
-            setTimeout(() => { location.href = `index.html?pid=${data.portfolioId}`; }, 500);
+            setTimeout(() => { location.href = `index?pid=${data.portfolioId}`; }, 500);
         } catch (e) {
             const msg = (e.message || '');
             if (msg.toLowerCase().includes('duplicate') || msg.includes('uq_portfolio_code')) {
