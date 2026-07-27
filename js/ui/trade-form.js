@@ -60,7 +60,7 @@ async function render() {
             </div>
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">记录操作</button>
-                <a href="stock-detail.html?id=${stock.id}" class="btn btn-secondary ms-2">取消</a>
+                <a href="stock-detail?id=${stock.id}" class="btn btn-secondary ms-2">取消</a>
             </div>
         </form>`;
 
@@ -115,7 +115,7 @@ async function render() {
                 }
 
                 flash(`操作已记录: ${stock.name}`);
-                setTimeout(() => { location.href = `stock-detail.html?id=${stock.id}`; }, 500);
+                setTimeout(() => { location.href = `stock-detail?id=${stock.id}`; }, 500);
             } catch (err) {
                 flash('操作失败: ' + err.message, 'danger');
             }

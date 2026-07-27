@@ -1,6 +1,6 @@
 // Portfolio management page
 
-import { getPortfolios, getStocksByPortfolio, createPortfolio, updatePortfolio, deletePortfolio } from '../api.js';
+import { getPortfolios, getStocksByPortfolio, getAllData, createPortfolio, updatePortfolio, deletePortfolio } from '../api.js';
 
 const content = document.getElementById('content');
 
@@ -15,11 +15,14 @@ function flash(msg, type = 'success') {
 
 async function render() {
     try {
-        const portfolios = await getPortfolios();
-        // Get stock counts
+        const { portfolios, stocks } = await getAllData();
+        // Count stocks per portfolio
+        const counts = {};
+        for (const s of stocks) {
+            counts[s.portfolio_id] = (counts[s.portfolio_id] || 0) + 1;
+        }
         for (const p of portfolios) {
-            const stocks = await getStocksByPortfolio(p.id);
-            p.stock_count = stocks.length;
+            p.stock_count = counts[p.id] || 0;
         }
 
         let listHtml = '';
@@ -135,7 +138,7 @@ function bindEvents(portfolios) {
         btn.addEventListener('click', async () => {
             const name = btn.dataset.name;
             const count = parseInt(btn.dataset.count);
-            const id = btn.dataset.id;
+            const id = parseInt(btn.dataset.delete);
             if (portfolios.length <= 1) {
                 flash('至少保留一个分组', 'danger');
                 return;

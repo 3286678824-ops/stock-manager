@@ -58,7 +58,7 @@ async function render() {
     ].map(o => `<option value="${o.value}" ${(stock && stock.status === o.value) ? 'selected' : ''}>${o.label}</option>`).join('');
 
     content.innerHTML = `
-    <form id="stock-form" class="row g-3" style="max-width:600px;">
+    <form id="stock-form" class="row g-3" style="max-width:600px;" novalidate>
         <div class="col-12">
             <label class="form-label">分组 <span class="text-danger">*</span></label>
             <select class="form-select" name="portfolio_id" required>${portfolioOpts}</select>
@@ -74,6 +74,10 @@ async function render() {
             <label class="form-label">股票名称</label>
             <input type="text" class="form-control" name="name" value="${stock ? stock.name : ''}" required placeholder="自动获取或手动输入">
         </div>
+        <div class="col-sm-6 col-12">
+            <label class="form-label">状态</label>
+            <select class="form-select" name="status" id="status-select">${statusOpts}</select>
+        </div>
         <div id="cost-qty-row" class="col-12"><div class="row g-3">
         <div class="col-sm-6 col-12">
             <label class="form-label"><span id="cost-label-text">成本价</span> <span class="text-danger" id="cost-required">*</span></label>
@@ -84,10 +88,6 @@ async function render() {
             <input type="number" step="1" class="form-control" name="quantity" value="${stock ? stock.quantity : '100'}" id="qty-input">
         </div>
         </div></div>
-        <div class="col-sm-6 col-12">
-            <label class="form-label">状态</label>
-            <select class="form-select" name="status" id="status-select">${statusOpts}</select>
-        </div>
         <div id="watching-note" class="col-12" style="display:none">
             <div class="alert alert-info py-2 mb-0"><i class="bi bi-eye"></i> 关注模式：无需填写数量和成本价，添加后可设置止盈止损提醒</div>
         </div>

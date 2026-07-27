@@ -217,7 +217,7 @@ Deno.serve(async (req) => {
                 })
         );
 
-        return json({ ok: true, updated: updatedIds.size });
+        return json({ ok: true, updated: updatedIds.size, prices: updated });
     } catch (e) {
         return json({ ok: false, error: e.message }, 500);
     }
