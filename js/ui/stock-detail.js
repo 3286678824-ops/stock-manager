@@ -1,6 +1,6 @@
 // Stock detail page
 
-import { getStockById, getStocksByPortfolio, getTradesByStock, getSnapshots } from '../api.js';
+import { getStockById, getTradesByStock, getSnapshots } from '../api.js';
 import { stopLossStatus, marketValue, costValue, profitLoss, profitLossPct, dayChangePct, statusColor } from '../computations.js';
 import { formatPrice, formatPct, actionLabel, actionBadgeClass, textClass, bgClass, statusLabel, statusBadgeClass } from '../utils.js';
 
@@ -24,12 +24,25 @@ async function render() {
     }
 
     try {
-        const stock = await getStockById(id);
-        const siblings = await getStocksByPortfolio(stock.portfolio_id);
-        const trades = await getTradesByStock(id);
-        const snapshots = await getSnapshots(id, 10);
+        const [stock, trades, snapshots] = await Promise.all([
+            getStockById(id),
+            getTradesByStock(id),
+            getSnapshots(id, 10),
+        ]);
 
-        const status = stopLossStatus(stock.current_price, stock.stop_loss_price, stock.take_profit_price);
+        // Get siblings from global cache (instant)
+        let siblings = [];
+        try {
+            const raw = localStorage.getItem('stock_manager_cache');
+            if (raw) {
+                const cache = JSON.parse(raw);
+                if (cache.data && cache.data.stocks) {
+                    siblings = cache.data.stocks.filter(s => s.portfolio_id === stock.portfolio_id);
+                }
+            }
+        } catch { /* ignore */ }
+
+        const status = stopLossStatus(stock.current_price, stock.stop_loss_price, stock.take_profit_price, stock.status);
         const mv = marketValue(stock.current_price, stock.quantity);
         const cv = costValue(stock.cost_price, stock.quantity);
         const pl = profitLoss(mv, cv);
@@ -46,12 +59,12 @@ async function render() {
         let siblingHtml = '';
         if (siblings.length > 1) {
             const items = siblings.map(s => {
-                const sStatus = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price);
+                const sStatus = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
                 const color = statusColor(sStatus);
                 const opacity = sStatus === 'normal' ? '0.3' : '1';
                 const active = s.id === stock.id ? ' active' : '';
                 const check = s.id === stock.id ? ' <i class="bi bi-check2"></i>' : '';
-                return `<li><a class="dropdown-item d-flex justify-content-between align-items-center${active}" href="stock-detail.html?id=${s.id}">
+                return `<li><a class="dropdown-item d-flex justify-content-between align-items-center${active}" href="stock-detail?id=${s.id}">
                     <span>
                         <span class="d-inline-block rounded-circle me-1 bg-${color}" style="width:8px;height:8px;vertical-align:middle;opacity:${opacity};"></span>
                         <span class="badge bg-light text-dark me-1">${s.code}</span>${s.name}
@@ -165,9 +178,9 @@ async function render() {
                 </h4>
             </div>
             <div class="d-flex flex-wrap gap-1">
-                <a href="analysis.html?id=${stock.id}" class="btn btn-info btn-sm"><i class="bi bi-lightbulb"></i> 分析</a>
-                <a href="trade-form.html?id=${stock.id}" class="btn btn-success btn-sm"><i class="bi bi-pencil-square"></i> 操作</a>
-                <a href="stock-form.html?id=${stock.id}" class="btn btn-outline-warning btn-sm"><i class="bi bi-gear"></i> 编辑</a>
+                <a href="analysis?id=${stock.id}" class="btn btn-info btn-sm"><i class="bi bi-lightbulb"></i> 分析</a>
+                <a href="trade-form?id=${stock.id}" class="btn btn-success btn-sm"><i class="bi bi-pencil-square"></i> 操作</a>
+                <a href="stock-form?id=${stock.id}" class="btn btn-outline-warning btn-sm"><i class="bi bi-gear"></i> 编辑</a>
             </div>
         </div>
 
@@ -196,7 +209,7 @@ async function render() {
         ${snapshotHtml}
         ${tradesHtml}
 
-        <div class="mt-3"><a href="index.html?pid=${stock.portfolio_id}" class="btn btn-secondary btn-sm">&larr; 返回仪表盘</a></div>`;
+        <div class="mt-3"><a href="index?pid=${stock.portfolio_id}" class="btn btn-secondary btn-sm">&larr; 返回仪表盘</a></div>`;
 
     } catch (e) {
         content.innerHTML = `<div class="alert alert-danger">加载失败: ${e.message}</div>`;

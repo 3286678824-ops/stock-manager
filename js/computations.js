@@ -53,8 +53,8 @@ export function dayChangePct(currentPrice, prevClosePrice) {
  * Stop-loss / take-profit status.
  * Returns: 'normal' | 'stop_warn' | 'stop_hit' | 'profit_warn' | 'profit_hit'
  */
-export function stopLossStatus(currentPrice, stopLossPrice, takeProfitPrice) {
-    if (currentPrice === 0) return 'normal';
+export function stopLossStatus(currentPrice, stopLossPrice, takeProfitPrice, stockStatus) {
+    if (stockStatus === 'sold' || currentPrice === 0) return 'normal';
     let result = 'normal';
 
     if (stopLossPrice && stopLossPrice > 0) {
@@ -79,7 +79,8 @@ export function stopLossStatus(currentPrice, stopLossPrice, takeProfitPrice) {
 /**
  * Row CSS class for stop-loss/profit status coloring
  */
-export function rowClass(status) {
+export function rowClass(status, stockStatus) {
+    if (stockStatus === 'sold') return 'table-sold';
     const map = {
         stop_hit: 'table-danger',
         stop_warn: 'table-warning',
@@ -113,7 +114,8 @@ export function alertsFromStocks(stocks) {
     const profit_warn = [];
 
     for (const s of stocks) {
-        const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price);
+        if (s.status === 'sold') continue;
+        const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
         if (status === 'stop_hit') stop_hit.push(s);
         else if (status === 'stop_warn') stop_warn.push(s);
         else if (status === 'profit_hit') profit_hit.push(s);
@@ -136,8 +138,11 @@ export function summaryFromStocks(stocks) {
     let totalMv = 0;
     let totalCost = 0;
     let totalDayChange = 0;
+    let activeCount = 0;
 
     for (const s of stocks) {
+        if (s.status === 'sold') continue;
+        activeCount++;
         const mv = marketValue(s.current_price, s.quantity);
         const cost = costValue(s.cost_price, s.quantity);
         totalMv += mv;
@@ -150,7 +155,7 @@ export function summaryFromStocks(stocks) {
     const totalPlPct = totalCost !== 0 ? round2(totalPl / totalCost * 100) : 0.0;
 
     return {
-        count: stocks.length,
+        count: activeCount,
         total_mv: round2(totalMv),
         total_cost: round2(totalCost),
         total_pl: totalPl,

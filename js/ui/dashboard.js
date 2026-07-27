@@ -1,6 +1,6 @@
 // Dashboard UI — renders portfolio tabs, summary cards, alerts, stock table
 
-import { getPortfolios, getStocksByPortfolio, refreshStockPrices, saveSnapshots, exportCsv } from '../api.js';
+import { getPortfolios, getStocksByPortfolio, getAllData, refreshStockPrices, saveSnapshots, exportCsv } from '../api.js';
 import { alertsFromStocks, summaryFromStocks, stopLossStatus, rowClass, statusColor } from '../computations.js';
 import { formatPrice, formatPct, actionLabel, actionBadgeClass, textClass, bgClass, statusLabel, statusBadgeClass } from '../utils.js';
 
@@ -31,13 +31,13 @@ function renderAlerts(stocks) {
         html += `<div class="alert alert-danger d-flex align-items-center py-2 mb-1">
             <i class="bi bi-exclamation-triangle-fill me-2"></i>
             <strong>止损触发！</strong> ${s.name}(${s.code}) 现价 ${formatPrice(s.current_price)} ≤ 止损价 ${formatPrice(s.stop_loss_price)}
-            &nbsp;<a href="stock-detail.html?id=${s.id}" class="alert-link">查看详情</a></div>`;
+            &nbsp;<a href="stock-detail?id=${s.id}" class="alert-link">查看详情</a></div>`;
     }
     for (const s of alerts.profit_hit) {
         html += `<div class="alert alert-success d-flex align-items-center py-2 mb-1">
             <i class="bi bi-check-circle-fill me-2"></i>
             <strong>止盈触发！</strong> ${s.name}(${s.code}) 现价 ${formatPrice(s.current_price)} ≥ 止盈价 ${formatPrice(s.take_profit_price)}
-            &nbsp;<a href="stock-detail.html?id=${s.id}" class="alert-link">查看详情</a></div>`;
+            &nbsp;<a href="stock-detail?id=${s.id}" class="alert-link">查看详情</a></div>`;
     }
     for (const s of alerts.stop_warn) {
         html += `<div class="alert alert-warning d-flex align-items-center py-2 mb-1">
@@ -98,17 +98,20 @@ function renderSummaryCards(summary) {
 }
 
 function renderStockTable(stocks) {
-    if (stocks.length === 0) {
+    const activeStocks = stocks.filter(s => s.status !== 'sold');
+    const soldStocks = stocks.filter(s => s.status === 'sold');
+
+    if (activeStocks.length === 0 && soldStocks.length === 0) {
         return `<tr><td colspan="13" class="text-center text-muted py-5">
             <i class="bi bi-inbox" style="font-size: 2rem;"></i>
             <p class="mt-2">暂无持仓数据</p>
-            <a href="stock-form.html?pid=${activePid}" class="btn btn-primary btn-sm">添加第一只股票</a>
+            <a href="stock-form?pid=${activePid}" class="btn btn-primary btn-sm">添加第一只股票</a>
         </td></tr>`;
     }
 
-    return stocks.map(s => {
-        const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price);
-        const cls = rowClass(status);
+    function stockRow(s) {
+        const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
+        const cls = rowClass(status, s.status);
         const stopCell = s.stop_loss_price
             ? `<span class="${status === 'stop_hit' || status === 'stop_warn' ? 'text-danger fw-bold' : 'text-muted'}">${formatPrice(s.stop_loss_price)}</span>`
             : '<span class="text-muted">-</span>';
@@ -122,30 +125,48 @@ function renderStockTable(stocks) {
         const plPct = s.cost_price > 0 ? Math.round((s.current_price - s.cost_price) / s.cost_price * 10000) / 100 : 0;
         const dcPct = s.prev_close_price > 0 ? Math.round((s.current_price - s.prev_close_price) / s.prev_close_price * 10000) / 100 : 0;
 
+        const isSold = s.status === 'sold';
+        const muted = isSold ? ' text-muted' : '';
+
         return `<tr class="${cls}">
-            <td><span class="badge bg-light text-dark">${s.code}</span></td>
+            <td><span class="badge bg-light ${muted}">${s.code}</span></td>
             <td>
-                <a href="stock-detail.html?id=${s.id}" class="text-decoration-none fw-bold">${s.name}</a>
+                <a href="stock-detail?id=${s.id}" class="text-decoration-none fw-bold${muted}">${s.name}</a>
                 ${s.status === 'watching' ? '<span class="badge bg-info">关注</span>' : ''}
-                ${s.status === 'sold' ? '<span class="badge bg-secondary">卖出</span>' : ''}
+                ${isSold ? '<span class="badge bg-secondary">已卖出</span>' : ''}
             </td>
-            <td class="text-end">${formatPrice(s.cost_price)}</td>
-            <td class="text-end ${textClass(s.current_price, s.prev_close_price)} fw-bold">${formatPrice(s.current_price)}</td>
+            <td class="text-end${muted}">${isSold ? '-' : formatPrice(s.cost_price)}</td>
+            <td class="text-end${muted}${isSold ? '' : ' ' + textClass(s.current_price, s.prev_close_price) + ' fw-bold'}">${formatPrice(s.current_price)}</td>
             <td class="text-end text-muted d-none d-md-table-cell">${formatPrice(s.prev_close_price)}</td>
-            <td class="text-end ${textClass(dcPct)} fw-bold">${formatPct(dcPct)}</td>
-            <td class="text-end">${s.quantity}</td>
-            <td class="text-end">${formatPrice(mv)}</td>
-            <td class="text-end ${textClass(pl)} fw-bold">${formatPrice(pl)}</td>
-            <td class="text-end ${textClass(plPct)}">${formatPrice(plPct)}%</td>
-            <td class="text-end d-none d-md-table-cell">${stopCell}</td>
-            <td class="text-end d-none d-md-table-cell">${profitCell}</td>
+            <td class="text-end${muted}${isSold ? '' : ' ' + textClass(dcPct) + ' fw-bold'}">${formatPct(dcPct)}</td>
+            <td class="text-end${muted}">${isSold ? '0' : s.quantity}</td>
+            <td class="text-end${muted}">${isSold ? '-' : formatPrice(mv)}</td>
+            <td class="text-end${muted}${isSold ? '' : ' ' + textClass(pl) + ' fw-bold'}">${isSold ? '-' : formatPrice(pl)}</td>
+            <td class="text-end${muted}${isSold ? '' : ' ' + textClass(plPct)}">${isSold ? '-' : formatPrice(plPct) + '%'}</td>
+            <td class="text-end${muted}">${isSold ? '-' : stopCell}</td>
+            <td class="text-end${muted}">${isSold ? '-' : profitCell}</td>
             <td class="text-center text-nowrap">
-                <a href="trade-form.html?id=${s.id}" class="btn btn-sm btn-outline-success" title="记录操作"><i class="bi bi-pencil-square"></i></a>
-                <a href="stock-form.html?id=${s.id}" class="btn btn-sm btn-outline-warning" title="编辑"><i class="bi bi-gear"></i></a>
+                ${isSold ? '' : `<a href="trade-form?id=${s.id}" class="btn btn-sm btn-outline-success" title="记录操作"><i class="bi bi-pencil-square"></i></a>`}
+                <a href="stock-form?id=${s.id}" class="btn btn-sm ${isSold ? 'btn-outline-secondary' : 'btn-outline-warning'}" title="编辑"><i class="bi bi-gear"></i></a>
                 <button class="btn btn-sm btn-outline-danger" title="删除" data-delete="${s.id}" data-name="${s.name}"><i class="bi bi-trash"></i></button>
             </td>
         </tr>`;
-    }).join('');
+    }
+
+    let html = activeStocks.map(s => stockRow(s)).join('');
+
+    if (soldStocks.length > 0) {
+        html += `<tr class="table-sold-divider">
+            <td colspan="13">
+                <span class="text-muted small">
+                    <i class="bi bi-archive"></i> 已清仓股票 (${soldStocks.length}只)
+                </span>
+            </td>
+        </tr>`;
+        html += soldStocks.map(s => stockRow(s)).join('');
+    }
+
+    return html;
 }
 
 function renderTabs(portfolios, active) {
@@ -163,27 +184,30 @@ function renderTabs(portfolios, active) {
 async function render(pid) {
     content.innerHTML = '加载中<span class="spin ms-2"></span>';
 
-    try {
-        allPortfolios = await getPortfolios();
+    const renderWithData = (portfolios, stocks) => {
+        allPortfolios = portfolios;
 
-        // Count stocks per portfolio
+        const stocksByPortfolio = {};
+        for (const s of stocks) {
+            if (!stocksByPortfolio[s.portfolio_id]) stocksByPortfolio[s.portfolio_id] = [];
+            stocksByPortfolio[s.portfolio_id].push(s);
+        }
         for (const p of allPortfolios) {
-            const stocks = await getStocksByPortfolio(p.id);
-            p.stock_count = stocks.length;
+            p.stock_count = (stocksByPortfolio[p.id] || []).length;
         }
 
         if (allPortfolios.length === 0) {
             content.innerHTML = `<div class="text-center text-muted py-5">
                 <i class="bi bi-folder2-open" style="font-size: 3rem;"></i>
                 <p class="mt-2">暂无分组，请先创建</p>
-                <a href="portfolios.html" class="btn btn-primary">去创建分组</a>
+                <a href="portfolios" class="btn btn-primary">去创建分组</a>
             </div>`;
             return;
         }
 
         const active = (pid && allPortfolios.find(p => p.id === pid)) || allPortfolios[0];
         activePid = active.id;
-        currentStocks = await getStocksByPortfolio(active.id);
+        currentStocks = stocksByPortfolio[active.id] || [];
         const summary = summaryFromStocks(currentStocks);
 
         content.innerHTML = `
@@ -198,7 +222,7 @@ async function render(pid) {
                     <div class="d-flex flex-wrap gap-1 justify-content-end">
                         <button class="btn btn-sm btn-outline-secondary" id="snapshot-btn"><i class="bi bi-camera"></i> 快照</button>
                         <button class="btn btn-sm btn-outline-primary" id="refresh-table-btn"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
-                        <a href="stock-form.html?pid=${active.id}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg"></i> 添加</a>
+                        <a href="stock-form?pid=${active.id}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg"></i> 添加</a>
                     </div>
                 </div>
                 <div class="table-responsive">
@@ -209,7 +233,7 @@ async function render(pid) {
                                 <th class="text-end">成本价</th><th class="text-end">现价</th><th class="text-end d-none d-md-table-cell">昨收</th>
                                 <th class="text-end">涨跌</th><th class="text-end">数量</th><th class="text-end">市值</th>
                                 <th class="text-end">盈亏</th><th class="text-end">收益率</th>
-                                <th class="text-end d-none d-md-table-cell" style="width:70px">止损价</th><th class="text-end d-none d-md-table-cell" style="width:70px">止盈价</th>
+                                <th class="text-end " style="width:70px">止损价</th><th class="text-end" style="width:70px">止盈价</th>
                                 <th class="text-center">操作</th>
                             </tr>
                         </thead>
@@ -219,6 +243,16 @@ async function render(pid) {
             </div>`;
 
         bindEvents();
+    };
+
+    try {
+        content.innerHTML = '加载中<span class="spin ms-2"></span>';
+
+        const data = await getAllData({
+            withCache: true,
+            onFresh: (fresh) => renderWithData(fresh.portfolios, fresh.stocks),
+        });
+        renderWithData(data.portfolios, data.stocks);
     } catch (e) {
         content.innerHTML = `<div class="alert alert-danger">加载失败: ${e.message}</div>`;
         console.error(e);
@@ -238,16 +272,22 @@ function bindEvents() {
         });
     });
 
-    // Refresh button
+    // Refresh button — updates prices then re-renders with full fresh data
+    const doRefresh = async () => {
+        const result = await refreshStockPrices();
+        flash(`行情刷新完成，更新了 ${result.updated} 只股票`);
+        // Clear cache so render() fetches fresh data (including stop-loss etc.)
+        localStorage.removeItem('stock_manager_cache');
+        await render(activePid);
+    };
+
     const refreshBtn = document.getElementById('refresh-table-btn');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', async () => {
             refreshBtn.disabled = true;
             refreshBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> 刷新中...';
             try {
-                const result = await refreshStockPrices();
-                flash(`行情刷新完成，更新了 ${result.updated} 只股票`);
-                await render(activePid);
+                await doRefresh();
             } catch (e) {
                 flash('刷新失败: ' + e.message, 'danger');
                 refreshBtn.disabled = false;
@@ -259,13 +299,14 @@ function bindEvents() {
     // Navbar refresh
     document.getElementById('refresh-btn')?.addEventListener('click', async e => {
         e.preventDefault();
+        const navbarBtn = document.getElementById('refresh-btn');
+        navbarBtn.innerHTML = '<span class="spin me-1"></span>刷新中...';
         try {
-            const result = await refreshStockPrices();
-            flash(`行情刷新完成，更新了 ${result.updated} 只股票`);
-            await render(activePid);
+            await doRefresh();
         } catch (e) {
             flash('刷新失败: ' + e.message, 'danger');
         }
+        navbarBtn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> 刷新行情';
     });
 
     // Snapshot button

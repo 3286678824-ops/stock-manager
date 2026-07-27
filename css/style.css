@@ -19,6 +19,19 @@ body {
 .table-warning { --bs-table-bg: #fff3cd !important; }
 .table-info { --bs-table-bg: #d1ecf1 !important; }
 
+.table-sold {
+    opacity: 0.5;
+}
+.table-sold:hover {
+    opacity: 0.75;
+}
+.table-sold-divider td {
+    background-color: #f8f9fa;
+    border-bottom: 2px solid #dee2e6;
+    padding: 6px 12px;
+    font-size: 0.85rem;
+}
+
 .table-responsive { -webkit-overflow-scrolling: touch; }
 
 .navbar {
