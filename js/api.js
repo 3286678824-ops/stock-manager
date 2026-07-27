@@ -168,6 +168,9 @@ export async function updateStock(id, data) {
 }
 
 export async function deleteStock(id) {
+    // Delete related records first to avoid foreign key constraint errors
+    await supabase.from('trade_logs').delete().eq('stock_id', id);
+    await supabase.from('daily_snapshots').delete().eq('stock_id', id);
     const { error } = await supabase.from('stocks').delete().eq('id', id);
     if (error) throw error;
 }
