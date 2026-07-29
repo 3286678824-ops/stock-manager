@@ -129,7 +129,7 @@ function renderStockTable(stocks) {
         const muted = isSold ? ' text-muted' : '';
 
         return `<tr class="${cls}">
-            <td><span class="badge bg-light ${muted}">${s.code}</span></td>
+            <td><span class="badge bg-light ${isSold ? 'text-muted' : 'text-dark'}">${s.code}</span></td>
             <td>
                 <a href="stock-detail?id=${s.id}" class="text-decoration-none fw-bold${muted}">${s.name}</a>
                 ${s.status === 'watching' ? '<span class="badge bg-info">关注</span>' : ''}
