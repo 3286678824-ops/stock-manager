@@ -58,17 +58,32 @@ async function render() {
                 <label class="form-label">备注</label>
                 <input type="text" class="form-control" name="note" placeholder="可选">
             </div>
+            <div id="stop-profit-fields" class="col-12">
+                <div class="row g-3">
+                    <div class="col-sm-6 col-12">
+                        <label class="form-label">止损价</label>
+                        <input type="number" step="0.01" class="form-control" name="stop_loss_price" value="${stock.stop_loss_price || ''}" placeholder="如 ${stock.current_price ? formatPrice(stock.current_price * 0.95) : ''}">
+                    </div>
+                    <div class="col-sm-6 col-12">
+                        <label class="form-label">止盈价</label>
+                        <input type="number" step="0.01" class="form-control" name="take_profit_price" value="${stock.take_profit_price || ''}" placeholder="如 ${stock.current_price ? formatPrice(stock.current_price * 1.1) : ''}">
+                    </div>
+                </div>
+            </div>
             <div class="col-12">
                 <button type="submit" class="btn btn-primary">记录操作</button>
                 <a href="stock-detail?id=${stock.id}" class="btn btn-secondary ms-2">取消</a>
             </div>
         </form>`;
 
-        // Hide quantity for "watch" action
+        // Show/hide fields based on action
         const qtyField = document.getElementById('qty-field');
+        const stopProfitFields = document.getElementById('stop-profit-fields');
         document.querySelectorAll('[name="action"]').forEach(radio => {
             radio.addEventListener('change', () => {
+                const isBuy = radio.value === 'buy';
                 qtyField.style.display = radio.value === 'watch' ? 'none' : '';
+                stopProfitFields.style.display = isBuy ? '' : 'none';
             });
         });
 
@@ -101,6 +116,10 @@ async function render() {
                     if (stock.status === 'watching') {
                         updates.status = 'holding';
                     }
+                    const slPrice = fd.get('stop_loss_price');
+                    const tpPrice = fd.get('take_profit_price');
+                    if (slPrice) updates.stopLossPrice = parseFloat(slPrice);
+                    if (tpPrice) updates.takeProfitPrice = parseFloat(tpPrice);
                     await updateStock(stock.id, updates);
                 } else if (action === 'sell') {
                     if (quantity > stock.quantity) {
