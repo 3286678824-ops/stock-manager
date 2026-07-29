@@ -93,11 +93,15 @@ async function render() {
                 if (action === 'buy') {
                     const totalCost = stock.cost_price * stock.quantity + price * quantity;
                     const newQty = stock.quantity + quantity;
-                    await updateStock(stock.id, {
+                    const updates = {
                         costPrice: Math.round(totalCost / newQty * 1000) / 1000,
                         quantity: newQty,
                         currentPrice: price,
-                    });
+                    };
+                    if (stock.status === 'watching') {
+                        updates.status = 'holding';
+                    }
+                    await updateStock(stock.id, updates);
                 } else if (action === 'sell') {
                     if (quantity > stock.quantity) {
                         flash('卖出数量不能超过持有数量', 'danger');
