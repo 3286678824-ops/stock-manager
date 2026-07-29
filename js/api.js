@@ -236,6 +236,11 @@ export async function fetchKline(code, days = 60) {
     return resp.json();
 }
 
+export async function fetchStockNews(code) {
+    const resp = await callFunction('fetch-stock-news', { code });
+    return resp.json();
+}
+
 // Cached kline fetch — tries direct fetch first (fast), falls back to Edge Function (slow)
 export async function fetchKlineCached(code, days = 60) {
     const cacheKey = `kline_${code}_${days}`;

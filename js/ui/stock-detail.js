@@ -1,6 +1,6 @@
 // Stock detail page
 
-import { getStockById, getTradesByStock, getSnapshots } from '../api.js';
+import { getStockById, getTradesByStock, getSnapshots, fetchStockNews } from '../api.js';
 import { stopLossStatus, marketValue, costValue, profitLoss, profitLossPct, dayChangePct, statusColor } from '../computations.js';
 import { formatPrice, formatPct, actionLabel, actionBadgeClass, textClass, bgClass, statusLabel, statusBadgeClass } from '../utils.js';
 
@@ -13,6 +13,12 @@ function flash(msg, type = 'success') {
     el.innerHTML = `${msg}<button class="btn btn-close" data-bs-dismiss="alert"></button>`;
     c.appendChild(el);
     setTimeout(() => el.remove(), 4000);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
 }
 
 async function render() {
@@ -41,6 +47,12 @@ async function render() {
                 }
             }
         } catch { /* ignore */ }
+
+        // Fetch news (non-blocking, independent try/catch)
+        let newsData = [];
+        try {
+            newsData = await fetchStockNews(stock.code);
+        } catch { /* news failure should not break the page */ }
 
         const status = stopLossStatus(stock.current_price, stock.stop_loss_price, stock.take_profit_price, stock.status);
         const mv = marketValue(stock.current_price, stock.quantity);
@@ -108,6 +120,29 @@ async function render() {
                     <div class="text-center mt-2">
                         <span class="badge bg-${statusBadgeClass(status)}">${statusLabel(status)}</span>
                     </div>
+                </div>
+            </div>`;
+        }
+
+        // News card
+        let newsHtml = '';
+        if (newsData && newsData.length > 0) {
+            const items = newsData.map(n => `
+            <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
+                <div class="d-flex w-100 justify-content-between align-items-start gap-2">
+                    <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
+                    <small class="text-muted text-nowrap">${n.date || ''}</small>
+                </div>
+                <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
+            </a>`).join('');
+            newsHtml = `
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <strong><i class="bi bi-newspaper"></i> 最新公告与资讯</strong>
+                    <small class="text-muted">${newsData.length}条</small>
+                </div>
+                <div class="list-group list-group-flush" style="max-height:480px;overflow-y:auto;">
+                    ${items}
                 </div>
             </div>`;
         }
@@ -206,6 +241,7 @@ async function render() {
         </div>
 
         ${stopProfitHtml}
+        ${newsHtml}
         ${snapshotHtml}
         ${tradesHtml}
 

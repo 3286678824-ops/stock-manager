@@ -1,6 +1,6 @@
 // Technical analysis page
 
-import { getStockById, fetchKlineCached, updateStock } from '../api.js';
+import { getStockById, fetchKlineCached, updateStock, fetchStockNews } from '../api.js';
 import { analyze } from '../analysis.js';
 import { formatPrice, textClass } from '../utils.js';
 
@@ -13,6 +13,12 @@ function flash(msg, type = 'success') {
     el.innerHTML = `${msg}<button class="btn btn-close" data-bs-dismiss="alert"></button>`;
     c.appendChild(el);
     setTimeout(() => el.remove(), 4000);
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
 }
 
 async function render() {
@@ -33,10 +39,42 @@ async function render() {
         const klines = await fetchKlineCached(stock.code, 60);
 
         if (!Array.isArray(klines) || klines.length < 14) {
-            content.innerHTML = `<div class="alert alert-warning">
-                数据不足（仅获取到${Array.isArray(klines) ? klines.length : 0}个交易日），至少需要14个交易日。
-                <br><a href="stock-detail?id=${stock.id}" class="btn btn-sm btn-secondary mt-2">&larr; 返回</a>
-            </div>`;
+            const dayCount = Array.isArray(klines) ? klines.length : 0;
+
+            // Fetch news for this stock
+            let newsHtml = '<p class="text-muted text-center py-3">正在获取相关资讯...</p>';
+            try {
+                const news = await fetchStockNews(stock.code);
+                if (news && news.length > 0) {
+                    const items = news.map(n => `
+                    <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
+                        <div class="d-flex w-100 justify-content-between align-items-start gap-2">
+                            <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
+                            <small class="text-muted text-nowrap">${n.date || ''}</small>
+                        </div>
+                        <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
+                    </a>`).join('');
+                    newsHtml = `<div class="list-group list-group-flush" style="max-height:480px;overflow-y:auto;">${items}</div>`;
+                } else {
+                    newsHtml = '<p class="text-muted text-center py-3">暂无相关资讯</p>';
+                }
+            } catch {
+                newsHtml = '<p class="text-muted text-center py-3">资讯获取失败</p>';
+            }
+
+            content.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h4><span class="badge bg-light text-dark">${stock.code}</span> ${stock.name}</h4>
+                <a href="stock-detail?id=${stock.id}" class="btn btn-secondary btn-sm">&larr; 返回详情</a>
+            </div>
+            <div class="alert alert-warning py-2">
+                <i class="bi bi-exclamation-triangle"></i> 数据不足（仅获取到${dayCount}个交易日），至少需要14个交易日进行技术分析。以下是最新公告资讯，帮助了解该标的近期动态：
+            </div>
+            <div class="card mb-4">
+                <div class="card-header"><strong><i class="bi bi-newspaper"></i> 最新公告与资讯</strong></div>
+                ${newsHtml}
+            </div>
+            <div class="mt-3"><a href="stock-detail?id=${stock.id}" class="btn btn-secondary btn-sm">&larr; 返回详情</a></div>`;
             return;
         }
 
