@@ -217,6 +217,10 @@ function bindForm(editing, stock) {
 
         try {
             if (editing) {
+                // Auto-switch watching → holding when cost & quantity are set
+                if (stock.status === 'watching' && data.costPrice > 0 && data.quantity > 0) {
+                    data.status = 'holding';
+                }
                 const oldCost = stock.cost_price;
                 const oldQty = stock.quantity;
                 await updateStock(stock.id, data);
