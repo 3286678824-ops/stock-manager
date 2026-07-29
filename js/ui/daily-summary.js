@@ -1,6 +1,6 @@
 // Daily Summary UI — auto stats per portfolio + user journal
 
-import { getPortfolios, getStocksByPortfolio, getAllData, getDailyNote, saveDailyNote } from '../api.js';
+import { getPortfolios, getStocksByPortfolio, getAllData, getDailyNote, saveDailyNote, getAllTrades } from '../api.js';
 import { summaryFromStocks, alertsFromStocks, stopLossStatus, dayChangePct } from '../computations.js';
 import { formatPrice, formatPct, bgClass, textClass } from '../utils.js';
 
@@ -88,8 +88,9 @@ function renderPortfolioCard(portfolio, stocks) {
         </div>`;
     }
 
-    // Top gainers & losers
-    const sorted = [...stocks].sort((a, b) => {
+    // Top gainers & losers (holding stocks only)
+    const holdingOnly = stocks.filter(s => s.status === 'holding');
+    const sorted = [...holdingOnly].sort((a, b) => {
         const da = dayChangePct(a.current_price, a.prev_close_price);
         const db = dayChangePct(b.current_price, b.prev_close_price);
         return db - da;
@@ -161,6 +162,15 @@ async function render(date) {
         const noteRecord = await getDailyNote(date);
         const noteContent = noteRecord ? noteRecord.content : '';
 
+        // Fetch today's trades
+        let todayTrades = [];
+        try {
+            const allTrades = await getAllTrades(1, 200);
+            const dateStart = date + 'T00:00:00';
+            const dateEnd = date + 'T23:59:59';
+            todayTrades = allTrades.logs.filter(t => t.created_at >= dateStart && t.created_at <= dateEnd);
+        } catch { /* ignore */ }
+
         const hasNext = nextDate(date) !== null;
         const prev = prevDate(date);
         const next = nextDate(date);
@@ -203,8 +213,42 @@ async function render(date) {
             </div>
         </div>`;
 
+        // Today's trades card
+        let tradesCardHtml = '';
+        if (todayTrades.length > 0) {
+            const actionLabel = { buy: '买入', sell: '卖出', watch: '关注', update: '修改' };
+            const items = todayTrades.map(t => {
+                const s = allStocks.find(x => x.id === t.stock_id);
+                const stockName = s ? `${s.name}(${s.code})` : `#${t.stock_id}`;
+                const label = actionLabel[t.action] || t.action;
+                const qtyStr = t.quantity > 0 ? `${t.quantity}股` : '';
+                const priceStr = t.price > 0 ? `@ ${formatPrice(t.price)}` : '';
+                const insertText = `${label} ${stockName} ${qtyStr} ${priceStr}`.trim();
+                return `<div class="d-flex justify-content-between align-items-center py-1 px-2 border-bottom">
+                    <span class="small">
+                        <span class="badge bg-secondary me-1">${label}</span>
+                        ${stockName}
+                        ${t.quantity > 0 ? `<span class="text-muted">${t.quantity}股</span>` : ''}
+                        ${t.price > 0 ? `<span class="text-muted">@${formatPrice(t.price)}</span>` : ''}
+                    </span>
+                    <button class="btn btn-sm btn-outline-primary insert-trade-btn" data-text="\\n## ${escapeHtml(insertText)}\\n" title="点击加入今日总结">
+                        <i class="bi bi-plus-lg"></i> 加入总结
+                    </button>
+                </div>`;
+            }).join('');
+            tradesCardHtml = `
+            <div class="card mt-3">
+                <div class="card-header"><strong><i class="bi bi-arrow-left-right"></i> 今日操作</strong><small class="text-muted ms-2">${todayTrades.length}笔</small></div>
+                <div class="card-body py-2">
+                    ${items}
+                    <div class="text-muted small mt-2"><i class="bi bi-info-circle"></i> 点击"加入总结"可将操作记录插入下方日记中作为小标题</div>
+                </div>
+            </div>`;
+        }
+
         // Daily note editor
         html += `
+        ${tradesCardHtml}
         <div class="card mt-3">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <strong><i class="bi bi-journal"></i> 交易日记</strong>
@@ -243,6 +287,21 @@ function bindEvents(date) {
         el.addEventListener('click', e => {
             e.preventDefault();
             render(el.dataset.date);
+        });
+    });
+
+    // Insert trade into journal
+    document.querySelectorAll('.insert-trade-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const textarea = document.getElementById('daily-note');
+            const insertText = btn.dataset.text.replace(/\\n/g, '\n');
+            const cursor = textarea.selectionStart;
+            const before = textarea.value.substring(0, cursor);
+            const after = textarea.value.substring(cursor);
+            const prefix = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
+            textarea.value = before + prefix + insertText + '\n' + after;
+            textarea.focus();
+            textarea.selectionStart = textarea.selectionEnd = cursor + prefix.length + insertText.length + 1;
         });
     });
 
