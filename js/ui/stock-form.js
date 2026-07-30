@@ -247,13 +247,14 @@ function bindForm(editing, stock) {
             } else {
                 const newStock = await createStock(data);
                 // Create initial trade log
-                if (data.quantity > 0) {
+                if (data.quantity > 0 || data.status === 'watching') {
+                    const isWatch = data.status === 'watching';
                     await createTradeLog({
                         stockId: newStock.id,
-                        action: data.status === 'holding' ? 'buy' : 'watch',
-                        price: data.costPrice,
-                        quantity: data.quantity,
-                        note: '初始添加',
+                        action: isWatch ? 'watch' : 'buy',
+                        price: isWatch ? 0 : data.costPrice,
+                        quantity: isWatch ? 0 : data.quantity,
+                        note: isWatch ? '初始关注' : '初始添加',
                     });
                 }
                 flash(`成功添加 ${data.name}(${data.code})`);
