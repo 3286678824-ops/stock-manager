@@ -215,15 +215,13 @@ async function render(date) {
 
         // Today's trades card
         let tradesCardHtml = '';
+        const actionLabel = { buy: '买入', sell: '卖出', watch: '关注', update: '修改' };
         if (todayTrades.length > 0) {
-            const actionLabel = { buy: '买入', sell: '卖出', watch: '关注', update: '修改' };
             const items = todayTrades.map(t => {
                 const s = allStocks.find(x => x.id === t.stock_id);
                 const stockName = s ? `${s.name}(${s.code})` : `#${t.stock_id}`;
                 const label = actionLabel[t.action] || t.action;
-                const qtyStr = t.quantity > 0 ? `${t.quantity}股` : '';
-                const priceStr = t.price > 0 ? `@ ${formatPrice(t.price)}` : '';
-                const insertText = `${label} ${stockName} ${qtyStr} ${priceStr}`.trim();
+                const insertText = `${label} ${stockName} ${t.quantity > 0 ? t.quantity + '股' : ''} ${t.price > 0 ? '@' + formatPrice(t.price) : ''}`.trim();
                 return `<div class="d-flex justify-content-between align-items-center py-1 px-2 border-bottom">
                     <span class="small">
                         <span class="badge bg-secondary me-1">${label}</span>
@@ -242,6 +240,15 @@ async function render(date) {
                 <div class="card-body py-2">
                     ${items}
                     <div class="text-muted small mt-2"><i class="bi bi-info-circle"></i> 点击"加入总结"可将操作记录插入下方日记中作为小标题</div>
+                </div>
+            </div>`;
+        } else {
+            tradesCardHtml = `
+            <div class="card mt-3">
+                <div class="card-header"><strong><i class="bi bi-arrow-left-right"></i> 今日操作</strong></div>
+                <div class="card-body py-3 text-center text-muted">
+                    <i class="bi bi-inbox" style="font-size:1.5rem;"></i>
+                    <p class="mt-2 mb-0 small">今日暂无操作记录</p>
                 </div>
             </div>`;
         }
