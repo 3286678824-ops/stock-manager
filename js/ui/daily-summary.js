@@ -22,20 +22,20 @@ function flash(msg, type = 'success') {
 // ── Date helpers ────────────────────────────────────────
 
 function fmtDate(dateStr) {
-    const d = new Date(dateStr + 'T00:00:00');
+    const d = new Date(dateStr + 'T00:00:00Z');
     const week = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-    return `${dateStr} ${week[d.getDay()]}`;
+    return `${dateStr} ${week[d.getUTCDay()]}`;
 }
 
 function prevDate(d) {
-    const dt = new Date(d + 'T00:00:00');
-    dt.setDate(dt.getDate() - 1);
+    const dt = new Date(d + 'T00:00:00Z');
+    dt.setUTCDate(dt.getUTCDate() - 1);
     return dt.toISOString().split('T')[0];
 }
 
 function nextDate(d) {
-    const dt = new Date(d + 'T00:00:00');
-    dt.setDate(dt.getDate() + 1);
+    const dt = new Date(d + 'T00:00:00Z');
+    dt.setUTCDate(dt.getUTCDate() + 1);
     const next = dt.toISOString().split('T')[0];
     if (next > currentDate) return null;
     return next;
