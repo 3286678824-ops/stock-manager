@@ -197,9 +197,9 @@ async function render(date) {
         }
         html += '</div>';
 
-        // Overall summary
-        const allActive = allHolding;
-        const overall = summaryFromStocks(allActive);
+        // Overall summary (holding only for count)
+        const allHoldingOnly = allStocks.filter(s => s.status === 'holding');
+        const overall = summaryFromStocks(allHoldingOnly);
         html += `
         <div class="card mt-3">
             <div class="card-header"><strong><i class="bi bi-pie-chart"></i> 全部持仓汇总</strong></div>

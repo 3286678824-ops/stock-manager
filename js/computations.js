@@ -142,6 +142,7 @@ export function summaryFromStocks(stocks) {
 
     for (const s of stocks) {
         if (s.status === 'sold') continue;
+        if (s.status === 'watching') continue;
         activeCount++;
         const mv = marketValue(s.current_price, s.quantity);
         const cost = costValue(s.cost_price, s.quantity);
