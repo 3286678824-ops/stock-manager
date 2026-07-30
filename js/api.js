@@ -333,7 +333,7 @@ export async function getDailyNote(date) {
 }
 
 export async function saveDailyNote(date, content) {
-    const { data, error } = await supabase.from('daily_notes').upsert({ date, content, updated_at: new Date().toISOString() }).select().single();
+    const { data, error } = await supabase.from('daily_notes').upsert({ date, content, updated_at: new Date().toISOString() }, { onConflict: 'date' }).select().single();
     if (error) throw error;
     return data;
 }
