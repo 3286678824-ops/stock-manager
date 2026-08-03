@@ -21,7 +21,7 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-async function renderEntryAnalysis(stock, klines) {
+async function renderEntryAnalysis(stock, klines, newsData) {
     const result = analyzeEntry(klines, stock.current_price);
 
     if (result.error) {
@@ -33,12 +33,10 @@ async function renderEntryAnalysis(stock, klines) {
     const badgeClass = result.entry_badge_class;
     const scoreColor = result.entry_score >= 70 ? 'text-success' : result.entry_score >= 40 ? 'text-warning' : 'text-danger';
 
-    // Fetch news independently
+    // Use pre-fetched news
     let newsHtml = '';
-    try {
-        const news = await fetchStockNews(stock.code);
-        if (news && news.length > 0) {
-            const items = news.slice(0, 5).map(n => `
+    if (newsData && newsData.length > 0) {
+        const items = newsData.slice(0, 5).map(n => `
             <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
                 <div class="d-flex w-100 justify-content-between align-items-start gap-2">
                     <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
@@ -46,13 +44,12 @@ async function renderEntryAnalysis(stock, klines) {
                 </div>
                 <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
             </a>`).join('');
-            newsHtml = `
+        newsHtml = `
             <div class="card mb-4">
                 <div class="card-header"><strong><i class="bi bi-newspaper"></i> 近期公告资讯</strong></div>
                 <div class="list-group list-group-flush" style="max-height:360px;overflow-y:auto;">${items}</div>
             </div>`;
-        }
-    } catch { /* news fetch failure is non-critical */ }
+    }
 
     let html = `
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -260,32 +257,30 @@ function render() {
     try {
         const stock = await getStockById(id);
 
-        // Show loading state then fetch kline (cached if available)
-        content.innerHTML = `获取 ${stock.name}(${stock.code}) K线数据<span class="spin ms-2"></span>`;
-        const klines = await fetchKlineCached(stock.code, 60);
+        // Fetch kline and news in parallel
+        content.innerHTML = `获取 ${stock.name}(${stock.code}) 数据<span class="spin ms-2"></span>`;
+        const [klines, newsData] = await Promise.all([
+            fetchKlineCached(stock.code, 60),
+            fetchStockNews(stock.code).catch(() => null),
+        ]);
 
         if (!Array.isArray(klines) || klines.length < 14) {
             const dayCount = Array.isArray(klines) ? klines.length : 0;
 
-            // Fetch news for this stock
-            let newsHtml = '<p class="text-muted text-center py-3">正在获取相关资讯...</p>';
-            try {
-                const news = await fetchStockNews(stock.code);
-                if (news && news.length > 0) {
-                    const items = news.map(n => `
-                    <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
-                        <div class="d-flex w-100 justify-content-between align-items-start gap-2">
-                            <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
-                            <small class="text-muted text-nowrap">${n.date || ''}</small>
-                        </div>
-                        <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
-                    </a>`).join('');
-                    newsHtml = `<div class="list-group list-group-flush" style="max-height:480px;overflow-y:auto;">${items}</div>`;
-                } else {
-                    newsHtml = '<p class="text-muted text-center py-3">暂无相关资讯</p>';
-                }
-            } catch {
-                newsHtml = '<p class="text-muted text-center py-3">资讯获取失败</p>';
+            // Use pre-fetched news
+            let newsHtml;
+            if (newsData && newsData.length > 0) {
+                const items = newsData.map(n => `
+                <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
+                    <div class="d-flex w-100 justify-content-between align-items-start gap-2">
+                        <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
+                        <small class="text-muted text-nowrap">${n.date || ''}</small>
+                    </div>
+                    <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
+                </a>`).join('');
+                newsHtml = `<div class="list-group list-group-flush" style="max-height:480px;overflow-y:auto;">${items}</div>`;
+            } else {
+                newsHtml = '<p class="text-muted text-center py-3">暂无相关资讯</p>';
             }
 
             content.innerHTML = `
@@ -306,7 +301,7 @@ function render() {
 
         // Watching stocks get an entry/buy analysis instead of position management
         if (stock.status === 'watching') {
-            renderEntryAnalysis(stock, klines);
+            renderEntryAnalysis(stock, klines, newsData);
             return;
         }
 

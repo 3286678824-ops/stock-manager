@@ -338,7 +338,10 @@ async function fetchKlineDirect(code, days = 60) {
             lmt: String(days),
         })}`;
 
-        const resp = await fetch(url);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const resp = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
         if (!resp.ok) return null;
         const json = await resp.json();
         if (!json.data || !json.data.klines) return null;
