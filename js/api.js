@@ -295,28 +295,45 @@ export async function fetchStockNews(code) {
     return resp.json();
 }
 
-// Cached kline fetch — tries direct fetch first (fast), falls back to Edge Function (slow)
+// Cached kline fetch — cache-first, then background refresh
 export async function fetchKlineCached(code, days = 60) {
     const cacheKey = `kline_${code}_${days}`;
+
+    // Return cached data immediately if valid
     try {
         const raw = localStorage.getItem(cacheKey);
         if (raw) {
             const cache = JSON.parse(raw);
-            const ttl = isMarketOpen() ? 5 * 60 * 1000 : 60 * 60 * 1000;
+            const ttl = isMarketOpen() ? 5 * 60 * 1000 : 24 * 60 * 60 * 1000;
             if (Date.now() - cache.ts < ttl) return cache.data;
         }
     } catch { /* ignore */ }
 
-    // Try direct fetch from Sina (fast — no cross-border hop)
-    let data = await fetchKlineDirect(code, days);
-    if (!data) {
-        // Fallback to Edge Function
-        data = await fetchKline(code, days);
+    // Race: direct fetch vs Edge Function — whichever responds first
+    const direct = fetchKlineDirect(code, days);
+    const edge = fetchKline(code, days);
+    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 10000));
+
+    let data;
+    try {
+        data = await Promise.race([direct, edge, timeout]);
+    } catch (e) {
+        // Both failed or timed out — try cache as last resort
+        if (e.message === 'TIMEOUT') {
+            try {
+                const raw = localStorage.getItem(cacheKey);
+                if (raw) return JSON.parse(raw).data;
+            } catch { /* ignore */ }
+        }
+        throw e;
     }
 
-    try {
-        localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
-    } catch { /* quota exceeded */ }
+    // A successful result; cache it
+    if (data && Array.isArray(data) && data.length > 0) {
+        try {
+            localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
+        } catch { /* quota exceeded */ }
+    }
     return data;
 }
 
