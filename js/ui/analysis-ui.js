@@ -21,7 +21,37 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-async function renderEntryAnalysis(stock, klines, newsData) {
+function renderNewsItems(news) {
+    if (!news || news.length === 0) return '<p class="text-muted text-center py-3">暂无相关资讯</p>';
+    const items = news.slice(0, 5).map(n => `
+    <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
+        <div class="d-flex w-100 justify-content-between align-items-start gap-2">
+            <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
+            <small class="text-muted text-nowrap">${n.date || ''}</small>
+        </div>
+        <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
+    </a>`).join('');
+    return `<div class="list-group list-group-flush" style="max-height:360px;overflow-y:auto;">${items}</div>`;
+}
+
+async function loadNewsCard(code, cardId) {
+    try {
+        const news = await fetchStockNews(code);
+        const card = document.getElementById(cardId);
+        if (card) {
+            const header = card.querySelector('.card-header').outerHTML;
+            card.innerHTML = header + renderNewsItems(news);
+        }
+    } catch {
+        const card = document.getElementById(cardId);
+        if (card) {
+            const header = card.querySelector('.card-header').outerHTML;
+            card.innerHTML = header + '<p class="text-muted text-center py-3">资讯获取失败</p>';
+        }
+    }
+}
+
+async function renderEntryAnalysis(stock, klines) {
     const result = analyzeEntry(klines, stock.current_price);
 
     if (result.error) {
@@ -32,24 +62,7 @@ async function renderEntryAnalysis(stock, klines, newsData) {
 
     const badgeClass = result.entry_badge_class;
     const scoreColor = result.entry_score >= 70 ? 'text-success' : result.entry_score >= 40 ? 'text-warning' : 'text-danger';
-
-    // Use pre-fetched news
-    let newsHtml = '';
-    if (newsData && newsData.length > 0) {
-        const items = newsData.slice(0, 5).map(n => `
-            <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
-                <div class="d-flex w-100 justify-content-between align-items-start gap-2">
-                    <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
-                    <small class="text-muted text-nowrap">${n.date || ''}</small>
-                </div>
-                <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
-            </a>`).join('');
-        newsHtml = `
-            <div class="card mb-4">
-                <div class="card-header"><strong><i class="bi bi-newspaper"></i> 近期公告资讯</strong></div>
-                <div class="list-group list-group-flush" style="max-height:360px;overflow-y:auto;">${items}</div>
-            </div>`;
-    }
+    const newsCardId = 'news-card-' + Date.now();
 
     let html = `
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -236,12 +249,18 @@ async function renderEntryAnalysis(stock, klines, newsData) {
     }
     html += '</div></div>';
 
-    // News
-    html += newsHtml;
+    // News — loaded in background
+    html += `<div class="card mb-4" id="${newsCardId}">
+        <div class="card-header"><strong><i class="bi bi-newspaper"></i> 近期公告资讯</strong></div>
+        <p class="text-muted text-center py-3">获取中<span class="spin ms-2"></span></p>
+    </div>`;
 
     html += `<div class="text-muted small mt-2">分析基于最近 ${result.data_days} 个交易日数据，仅供参考不构成投资建议</div>`;
 
     content.innerHTML = html;
+
+    // Load news asynchronously
+    loadNewsCard(stock.code, newsCardId);
 }
 
 function render() {
@@ -257,31 +276,13 @@ function render() {
     try {
         const stock = await getStockById(id);
 
-        // Fetch kline and news in parallel
-        content.innerHTML = `获取 ${stock.name}(${stock.code}) 数据<span class="spin ms-2"></span>`;
-        const [klines, newsData] = await Promise.all([
-            fetchKlineCached(stock.code, 60),
-            fetchStockNews(stock.code).catch(() => null),
-        ]);
+        // Fetch kline first (fast), load news in background later
+        content.innerHTML = `获取 ${stock.name}(${stock.code}) K线数据<span class="spin ms-2"></span>`;
+        const klines = await fetchKlineCached(stock.code, 60);
 
         if (!Array.isArray(klines) || klines.length < 14) {
             const dayCount = Array.isArray(klines) ? klines.length : 0;
-
-            // Use pre-fetched news
-            let newsHtml;
-            if (newsData && newsData.length > 0) {
-                const items = newsData.map(n => `
-                <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
-                    <div class="d-flex w-100 justify-content-between align-items-start gap-2">
-                        <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
-                        <small class="text-muted text-nowrap">${n.date || ''}</small>
-                    </div>
-                    <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
-                </a>`).join('');
-                newsHtml = `<div class="list-group list-group-flush" style="max-height:480px;overflow-y:auto;">${items}</div>`;
-            } else {
-                newsHtml = '<p class="text-muted text-center py-3">暂无相关资讯</p>';
-            }
+            const newsCardId = 'news-card-' + Date.now();
 
             content.innerHTML = `
             <div class="d-flex justify-content-between align-items-center mb-3">
@@ -291,17 +292,20 @@ function render() {
             <div class="alert alert-warning py-2">
                 <i class="bi bi-exclamation-triangle"></i> 数据不足（仅获取到${dayCount}个交易日），至少需要14个交易日进行技术分析。以下是最新公告资讯，帮助了解该标的近期动态：
             </div>
-            <div class="card mb-4">
+            <div class="card mb-4" id="${newsCardId}">
                 <div class="card-header"><strong><i class="bi bi-newspaper"></i> 最新公告与资讯</strong></div>
-                ${newsHtml}
+                <p class="text-muted text-center py-3">获取中<span class="spin ms-2"></span></p>
             </div>
             <div class="mt-3"><a href="stock-detail?id=${stock.id}" class="btn btn-secondary btn-sm">&larr; 返回详情</a></div>`;
+
+            // Load news in background
+            loadNewsCard(stock.code, newsCardId);
             return;
         }
 
         // Watching stocks get an entry/buy analysis instead of position management
         if (stock.status === 'watching') {
-            renderEntryAnalysis(stock, klines, newsData);
+            renderEntryAnalysis(stock, klines);
             return;
         }
 
