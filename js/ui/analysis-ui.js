@@ -263,7 +263,7 @@ async function renderEntryAnalysis(stock, klines) {
     loadNewsCard(stock.code, newsCardId);
 }
 
-function render() {
+async function render() {
     const params = new URLSearchParams(location.search);
     const id = parseInt(params.get('id'));
     if (!id) {
