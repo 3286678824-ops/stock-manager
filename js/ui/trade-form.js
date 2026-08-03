@@ -48,7 +48,7 @@ async function render() {
             </div>
             <div class="col-sm-6 col-12">
                 <label class="form-label">价格 <span class="text-danger">*</span></label>
-                <input type="number" step="0.01" class="form-control" name="price" value="${stock.current_price}" required>
+                <input type="number" step="0.001" class="form-control" name="price" value="${stock.current_price}" required>
             </div>
             <div class="col-sm-6 col-12" id="qty-field">
                 <label class="form-label">数量（股） <span class="text-danger">*</span></label>
@@ -62,11 +62,11 @@ async function render() {
                 <div class="row g-3">
                     <div class="col-sm-6 col-12">
                         <label class="form-label">止损价</label>
-                        <input type="number" step="0.01" class="form-control" name="stop_loss_price" value="${stock.stop_loss_price || ''}" placeholder="如 ${stock.current_price ? formatPrice(stock.current_price * 0.95) : ''}">
+                        <input type="number" step="0.001" class="form-control" name="stop_loss_price" value="${stock.stop_loss_price || ''}" placeholder="如 ${stock.current_price ? formatPrice(stock.current_price * 0.95) : ''}">
                     </div>
                     <div class="col-sm-6 col-12">
                         <label class="form-label">止盈价</label>
-                        <input type="number" step="0.01" class="form-control" name="take_profit_price" value="${stock.take_profit_price || ''}" placeholder="如 ${stock.current_price ? formatPrice(stock.current_price * 1.1) : ''}">
+                        <input type="number" step="0.001" class="form-control" name="take_profit_price" value="${stock.take_profit_price || ''}" placeholder="如 ${stock.current_price ? formatPrice(stock.current_price * 1.1) : ''}">
                     </div>
                 </div>
             </div>

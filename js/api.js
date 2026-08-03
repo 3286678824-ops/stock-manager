@@ -134,7 +134,7 @@ export async function getStockById(id) {
 }
 
 export async function createStock(data) {
-    const { data: stock, error } = await withRetry(() => supabase.from('stocks').insert({
+    const insertRow = {
         portfolio_id: data.portfolioId,
         code: data.code,
         name: data.name,
@@ -146,13 +146,40 @@ export async function createStock(data) {
         status: data.status || 'holding',
         stop_loss_price: data.stopLossPrice || null,
         take_profit_price: data.takeProfitPrice || null,
-    }).select().single());
-    if (error) throw error;
-    return stock;
+    };
+
+    // Try insert first
+    const { data: stock, error } = await supabase.from('stocks').insert(insertRow).select().single();
+
+    if (!error) return stock;
+
+    // If not a duplicate, re-throw
+    if (error.code !== '23505') throw error;
+
+    // Duplicate: find the existing record
+    const { data: existingRows } = await supabase.from('stocks')
+        .select('id, status').eq('portfolio_id', data.portfolioId).eq('code', data.code).limit(1);
+
+    if (!existingRows || existingRows.length === 0) {
+        // Shouldn't happen — unique constraint says it exists but query didn't find it
+        throw new Error('DUPLICATE');
+    }
+
+    const existing = existingRows[0];
+    if (existing.status !== 'sold') {
+        throw new Error('DUPLICATE');
+    }
+
+    // Reactivate the sold stock with new values
+    await updateStock(existing.id, data);
+    return { ...data, id: existing.id, reactivated: true };
 }
 
 export async function updateStock(id, data) {
     const updates = {};
+    if (data.name !== undefined) updates.name = data.name;
+    if (data.code !== undefined) updates.code = data.code;
+    if (data.market !== undefined) updates.market = data.market;
     if (data.portfolioId !== undefined) updates.portfolio_id = data.portfolioId;
     if (data.costPrice !== undefined) updates.cost_price = data.costPrice;
     if (data.currentPrice !== undefined) updates.current_price = data.currentPrice;
@@ -179,6 +206,33 @@ export async function getAllStocks() {
     const { data, error } = await supabase.from('stocks').select('*');
     if (error) throw error;
     return data;
+}
+
+// ── Cleanup sold stocks (one-time migration) ──────────
+
+export async function cleanupSoldStocks() {
+    const { data: soldStocks, error } = await supabase.from('stocks')
+        .select('id, code').eq('status', 'sold');
+
+    if (error) throw error;
+    if (!soldStocks || soldStocks.length === 0) return 0;
+
+    let count = 0;
+    for (const s of soldStocks) {
+        // Skip already-renamed codes
+        if (s.code.includes('_sold_')) continue;
+
+        const newCode = s.code + '_sold_' + s.id;
+        const { error: updateError } = await supabase.from('stocks')
+            .update({ code: newCode, updated_at: new Date().toISOString() })
+            .eq('id', s.id);
+        if (updateError) {
+            console.warn(`Failed to rename sold stock ${s.id}:`, updateError.message);
+        } else {
+            count++;
+        }
+    }
+    return count;
 }
 
 // ── Trade Logs ─────────────────────────────────────────

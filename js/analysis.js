@@ -8,13 +8,13 @@
 // ── helpers ───────────────────────────────────────────
 
 function round2(n) {
-    return Math.round(n * 100) / 100;
+    return Math.round(n * 1000) / 1000;
 }
 
 function roundToTick(price) {
     if (price < 10) return round2(price);
-    if (price < 100) return Math.round(price * 10) / 10;
-    return Math.round(price);
+    if (price < 100) return Math.round(price * 100) / 100;
+    return Math.round(price * 10) / 10;
 }
 
 // ── ATR ───────────────────────────────────────────────
@@ -417,6 +417,276 @@ export function assessRisk(klines, currentPrice, costPrice) {
     }
 
     return { level, score, warnings, suggestion, badgeClass };
+}
+
+// ── Volume Trend ──────────────────────────────────────
+
+export function calcVolumeTrend(klines) {
+    if (klines.length < 20) return '量能数据不足';
+
+    const recent5 = klines.slice(-5);
+    const recent20 = klines.slice(-20);
+
+    const avgVol5 = recent5.reduce((s, k) => s + (k.volume || 0), 0) / 5;
+    const avgVol20 = recent20.reduce((s, k) => s + (k.volume || 0), 0) / 20;
+
+    let upVol = 0, downVol = 0, upDays = 0, downDays = 0;
+    for (const k of recent20) {
+        if (k.close > k.open) {
+            upVol += k.volume || 0;
+            upDays++;
+        } else if (k.close < k.open) {
+            downVol += k.volume || 0;
+            downDays++;
+        }
+    }
+
+    const volRatio = avgVol20 > 0 ? avgVol5 / avgVol20 : 1;
+    const upVolAvg = upDays > 0 ? upVol / upDays : 0;
+    const downVolAvg = downDays > 0 ? downVol / downDays : 0;
+
+    if (volRatio > 1.5 && upVolAvg > downVolAvg * 1.2) return '放量上涨';
+    if (volRatio < 0.6) return '缩量调整';
+    if (downVolAvg > upVolAvg * 1.3 && volRatio > 1) return '量价背离';
+    return '量能正常';
+}
+
+// ── Entry Analysis (for watching stocks) ──────────────
+
+export function analyzeEntry(klines, currentPrice) {
+    if (klines.length < 14) {
+        return { error: `数据不足（仅获取到${klines.length}个交易日），至少需要14个交易日` };
+    }
+
+    const days = Math.min(klines.length, 60);
+    const atr = calcAtr(klines);
+    const ma5 = calcMa(klines, 5);
+    const ma10 = calcMa(klines, 10);
+    const ma20 = calcMa(klines, 20);
+    const ma60 = calcMa(klines, 60);
+    const [supports, resistances] = findSupportResistance(klines);
+    const [swingHighs, swingLows] = findSwingPoints(klines);
+    const consolidation = findConsolidation(klines);
+    const volumeTrend = calcVolumeTrend(klines);
+
+    // Range
+    const recentKlines = klines.slice(-days);
+    const recentHigh = Math.max(...recentKlines.map(k => k.high));
+    const recentLow = Math.min(...recentKlines.map(k => k.low));
+    const positionInRange = recentHigh !== recentLow
+        ? round2((currentPrice - recentLow) / (recentHigh - recentLow) * 100)
+        : 50;
+
+    // Nearest support & resistance
+    const supportsBelow = supports.filter(s => s.price < currentPrice).sort((a, b) => b.price - a.price);
+    const resistancesAbove = resistances.filter(r => r.price > currentPrice).sort((a, b) => a.price - b.price);
+    const nearestSupport = supportsBelow.length > 0
+        ? { price: supportsBelow[0].price, distance_pct: round2((currentPrice - supportsBelow[0].price) / currentPrice * 100) }
+        : null;
+    const nearestResistance = resistancesAbove.length > 0
+        ? { price: resistancesAbove[0].price, distance_pct: round2((resistancesAbove[0].price - currentPrice) / currentPrice * 100) }
+        : null;
+
+    // ── Trend detection ──
+    let trend, trendClass;
+    if (ma5 > ma10 && ma10 > ma20) {
+        trend = '上升趋势（短期均线多头排列）';
+        trendClass = 'success';
+    } else if (ma5 < ma10 && ma10 < ma20) {
+        trend = '下降趋势（短期均线空头排列）';
+        trendClass = 'danger';
+    } else {
+        trend = '震荡整理（均线交织）';
+        trendClass = 'warning';
+    }
+
+    // ── Entry scoring ──
+    const breakdown = [];
+    const positives = [];
+    const warnings = [];
+
+    // Trend score (0-40)
+    let trendScore;
+    if (ma5 > ma10 && ma10 > ma20) {
+        trendScore = ma5 > ma10 * 1.02 ? 40 : 35;
+        positives.push('均线多头排列，趋势向上');
+    } else if (ma5 > ma10 && ma10 <= ma20) {
+        trendScore = 25;
+        positives.push('短期均线转好，有走强迹象');
+    } else if (ma5 < ma10 && ma10 < ma20) {
+        trendScore = currentPrice > ma60 ? 10 : 5;
+        warnings.push('均线空头排列，趋势向下');
+    } else {
+        trendScore = 18;
+    }
+
+    if (currentPrice < ma20) {
+        trendScore = Math.max(0, trendScore - 8);
+        warnings.push('股价低于MA20中期均线');
+    }
+    if (currentPrice < ma60 && ma60 > 0) {
+        trendScore = Math.max(0, trendScore - 5);
+        warnings.push('股价低于MA60长期均线');
+    }
+    if (ma20 < ma60 && ma20 > 0 && ma60 > 0) {
+        trendScore = Math.max(0, trendScore - 3);
+        warnings.push('MA20低于MA60，中长期偏弱');
+    }
+    trendScore = Math.max(0, Math.min(40, trendScore));
+    breakdown.push({ label: '趋势', score: trendScore, max: 40, detail: trend });
+
+    // Position score (0-30)
+    let positionScore;
+    if (nearestSupport && nearestSupport.distance_pct <= 3) {
+        positionScore = 28;
+        positives.push(`距支撑位 ${formatPriceShort(nearestSupport.price)} 仅${nearestSupport.distance_pct}%，回调空间有限`);
+    } else if (nearestSupport && nearestSupport.distance_pct <= 6) {
+        positionScore = 22;
+    } else if (positionInRange < 30) {
+        positionScore = 24;
+        positives.push('处于区间低位，下行空间相对有限');
+    } else if (positionInRange > 70) {
+        positionScore = 8;
+        warnings.push('处于区间高位，追高风险较大');
+    } else {
+        positionScore = 16;
+    }
+
+    if (nearestResistance && nearestResistance.distance_pct <= 3) {
+        positionScore = Math.max(5, positionScore - 6);
+        warnings.push(`距压力位 ${formatPriceShort(nearestResistance.price)} 仅${nearestResistance.distance_pct}%，上涨空间有限`);
+    }
+    positionScore = Math.max(0, Math.min(30, positionScore));
+    breakdown.push({ label: '位置', score: positionScore, max: 30, detail: `区间${positionInRange}%位置` });
+
+    // Volume score (0-20)
+    let volumeScore;
+    switch (volumeTrend) {
+        case '放量上涨': volumeScore = 18; positives.push('近期放量上涨，资金介入明显'); break;
+        case '量能正常': volumeScore = 13; break;
+        case '缩量调整': volumeScore = 8; warnings.push('成交量萎缩，市场关注度低'); break;
+        case '量价背离': volumeScore = 4; warnings.push('量价背离，上涨动力不足'); break;
+        default: volumeScore = 10;
+    }
+    breakdown.push({ label: '量能', score: volumeScore, max: 20, detail: volumeTrend });
+
+    // Pattern score (0-10)
+    let patternScore;
+    if (consolidation) {
+        const distToLower = round2((currentPrice - consolidation.lower) / currentPrice * 100);
+        const distToUpper = round2((consolidation.upper - currentPrice) / currentPrice * 100);
+        if (distToLower <= 3) {
+            patternScore = 9;
+            positives.push(`盘整平台下沿附近(${consolidation.range_pct}%振幅)，支撑明确`);
+        } else if (distToUpper <= 3) {
+            patternScore = 3;
+            warnings.push('接近盘整平台上沿，突破前不宜追高');
+        } else {
+            patternScore = 6;
+        }
+    } else if (supportsBelow.length >= 2) {
+        patternScore = 6;
+    } else {
+        patternScore = 4;
+    }
+    breakdown.push({ label: '形态', score: patternScore, max: 10, detail: consolidation ? `盘整区间 ${formatPriceShort(consolidation.lower)}-${formatPriceShort(consolidation.upper)}` : '无明确形态' });
+
+    // Total score
+    const entryScore = trendScore + positionScore + volumeScore + patternScore;
+
+    // Entry level
+    let entryLevel, entryLabel, entryBadgeClass;
+    if (entryScore >= 70) {
+        entryLevel = 'suitable'; entryLabel = '可考虑建仓'; entryBadgeClass = 'success';
+    } else if (entryScore >= 40) {
+        entryLevel = 'cautious'; entryLabel = '谨慎关注'; entryBadgeClass = 'warning';
+    } else {
+        entryLevel = 'wait'; entryLabel = '建议观望'; entryBadgeClass = 'danger';
+    }
+
+    // ── Suggested entry zones ──
+    const zones = [];
+    if (nearestSupport) {
+        zones.push({
+            price: nearestSupport.price,
+            label: '最佳买点',
+            reason: `最近支撑位，触及${supportsBelow[0].touches}次，回调至此可大胆买入`,
+        });
+    }
+    if (ma20 > 0 && ma20 < currentPrice && (!nearestSupport || Math.abs(ma20 - nearestSupport.price) / nearestSupport.price > 0.02)) {
+        zones.push({
+            price: ma20,
+            label: '均线回调位',
+            reason: '回调至MA20中期均线，趋势不变时是较好买点',
+        });
+    }
+    if (consolidation && consolidation.lower < currentPrice) {
+        const alreadyAdded = zones.some(z => Math.abs(z.price - consolidation.lower) / consolidation.lower < 0.02);
+        if (!alreadyAdded) {
+            zones.push({
+                price: consolidation.lower,
+                label: '平台下沿',
+                reason: `整理平台下沿(${consolidation.range_pct}%振幅)，支撑有效时可介入`,
+            });
+        }
+    }
+    if (entryScore >= 60) {
+        zones.push({
+            price: currentPrice,
+            label: '现价分批',
+            reason: '评分尚可，可现价小仓位试探，回调加仓',
+        });
+    }
+    // Fallback
+    if (zones.length === 0 && nearestSupport) {
+        zones.push({
+            price: nearestSupport.price,
+            label: '参考买点',
+            reason: '无其他技术位，以最近支撑为参考',
+        });
+    }
+    if (zones.length === 0) {
+        zones.push({
+            price: roundToTick(currentPrice * 0.95),
+            label: '保守参考',
+            reason: '缺乏明确技术位，按现价95%估算',
+        });
+    }
+
+    // ── Risk/Reward ──
+    const riskPct = nearestSupport ? nearestSupport.distance_pct : round2((currentPrice - recentLow) / currentPrice * 100);
+    const rewardPct = nearestResistance ? nearestResistance.distance_pct : round2((recentHigh - currentPrice) / currentPrice * 100);
+    const rrRatio = riskPct > 0 ? round2(rewardPct / riskPct) : 0;
+
+    return {
+        trend, trend_class: trendClass,
+        ma5: roundToTick(ma5), ma10: roundToTick(ma10), ma20: roundToTick(ma20), ma60: roundToTick(ma60),
+        atr: roundToTick(atr), atr_pct: currentPrice ? round2(atr / currentPrice * 100) : 0,
+        position_in_range: positionInRange,
+        recent_high: roundToTick(recentHigh), recent_low: roundToTick(recentLow),
+        supports: supportsBelow.slice(0, 5),
+        resistances: resistancesAbove.slice(0, 5),
+        nearest_support: nearestSupport,
+        nearest_resistance: nearestResistance,
+        volume_trend: volumeTrend,
+        consolidation,
+        entry_score: entryScore,
+        entry_level: entryLevel,
+        entry_label: entryLabel,
+        entry_badge_class: entryBadgeClass,
+        score_breakdown: breakdown,
+        suggested_zones: zones,
+        risk_reward: { risk_pct: riskPct, reward_pct: rewardPct, ratio: rrRatio },
+        warnings,
+        positives,
+        data_days: klines.length,
+    };
+}
+
+function formatPriceShort(price) {
+    if (price < 10) return price.toFixed(2);
+    if (price < 100) return price.toFixed(1);
+    return String(Math.round(price));
 }
 
 // ── Full Analysis ─────────────────────────────────────

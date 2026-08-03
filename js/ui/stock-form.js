@@ -81,7 +81,7 @@ async function render() {
         <div id="cost-qty-row" class="col-12"><div class="row g-3">
         <div class="col-sm-6 col-12">
             <label class="form-label"><span id="cost-label-text">成本价</span> <span class="text-danger" id="cost-required">*</span></label>
-            <input type="number" step="0.01" class="form-control" name="cost_price" value="${stock ? stock.cost_price : ''}" id="cost-price-input">
+            <input type="number" step="0.001" class="form-control" name="cost_price" value="${stock ? stock.cost_price : ''}" id="cost-price-input">
         </div>
         <div class="col-sm-6 col-12">
             <label class="form-label"><span id="qty-label-text">数量（股）</span> <span class="text-danger" id="qty-required">*</span></label>
@@ -96,11 +96,11 @@ async function render() {
         </div>
         <div class="col-sm-6 col-12">
             <label class="form-label">止损价</label>
-            <input type="number" step="0.01" class="form-control" name="stop_loss_price" value="${stock && stock.stop_loss_price ? stock.stop_loss_price : ''}" placeholder="留空则不启用">
+            <input type="number" step="0.001" class="form-control" name="stop_loss_price" value="${stock && stock.stop_loss_price ? stock.stop_loss_price : ''}" placeholder="留空则不启用">
         </div>
         <div class="col-sm-6 col-12">
             <label class="form-label">止盈价</label>
-            <input type="number" step="0.01" class="form-control" name="take_profit_price" value="${stock && stock.take_profit_price ? stock.take_profit_price : ''}" placeholder="留空则不启用">
+            <input type="number" step="0.001" class="form-control" name="take_profit_price" value="${stock && stock.take_profit_price ? stock.take_profit_price : ''}" placeholder="留空则不启用">
         </div>
         <div class="col-12">
             <button type="submit" class="btn btn-primary">${editing ? '保存修改' : '添加股票'}</button>
@@ -246,8 +246,8 @@ function bindForm(editing, stock) {
                 flash(`${data.name} 更新成功`);
             } else {
                 const newStock = await createStock(data);
-                // Create initial trade log
-                if (data.quantity > 0 || data.status === 'watching') {
+                // Create initial trade log (skip if reactivating a sold stock — updateStock already handles it)
+                if (!newStock.reactivated && (data.quantity > 0 || data.status === 'watching')) {
                     const isWatch = data.status === 'watching';
                     await createTradeLog({
                         stockId: newStock.id,

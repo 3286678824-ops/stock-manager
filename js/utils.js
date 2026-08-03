@@ -33,7 +33,7 @@ const STATUS_CLASSES = {
 export function formatPrice(p) {
     if (p == null) return '-';
     if (p === Math.floor(p)) return String(Math.floor(p));
-    return p.toFixed(2);
+    return p.toFixed(3);
 }
 
 export function formatPct(value) {

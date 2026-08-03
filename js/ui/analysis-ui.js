@@ -1,7 +1,7 @@
 // Technical analysis page
 
 import { getStockById, fetchKlineCached, updateStock, fetchStockNews } from '../api.js';
-import { analyze } from '../analysis.js';
+import { analyze, analyzeEntry } from '../analysis.js';
 import { formatPrice, textClass } from '../utils.js';
 
 const content = document.getElementById('content');
@@ -21,7 +21,233 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-async function render() {
+async function renderEntryAnalysis(stock, klines) {
+    const result = analyzeEntry(klines, stock.current_price);
+
+    if (result.error) {
+        content.innerHTML = `<div class="alert alert-warning">${result.error}<br>
+            <a href="stock-detail?id=${stock.id}" class="btn btn-sm btn-secondary mt-2">&larr; 返回</a></div>`;
+        return;
+    }
+
+    const badgeClass = result.entry_badge_class;
+    const scoreColor = result.entry_score >= 70 ? 'text-success' : result.entry_score >= 40 ? 'text-warning' : 'text-danger';
+
+    // Fetch news independently
+    let newsHtml = '';
+    try {
+        const news = await fetchStockNews(stock.code);
+        if (news && news.length > 0) {
+            const items = news.slice(0, 5).map(n => `
+            <a href="${n.url || '#'}" target="_blank" rel="noopener" class="list-group-item list-group-item-action py-2 px-3">
+                <div class="d-flex w-100 justify-content-between align-items-start gap-2">
+                    <span class="news-title text-truncate" style="max-width:75%;">${escapeHtml(n.title || '')}</span>
+                    <small class="text-muted text-nowrap">${n.date || ''}</small>
+                </div>
+                <span class="badge bg-light text-dark mt-1">${escapeHtml(n.source || '资讯')}</span>
+            </a>`).join('');
+            newsHtml = `
+            <div class="card mb-4">
+                <div class="card-header"><strong><i class="bi bi-newspaper"></i> 近期公告资讯</strong></div>
+                <div class="list-group list-group-flush" style="max-height:360px;overflow-y:auto;">${items}</div>
+            </div>`;
+        }
+    } catch { /* news fetch failure is non-critical */ }
+
+    let html = `
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4>
+            <span class="badge bg-light text-dark fs-6">${stock.code}</span> ${stock.name}
+            <span class="badge bg-${result.trend_class}">${result.trend}</span>
+            <span class="badge bg-${badgeClass} ms-1">${result.entry_label}</span>
+        </h4>
+        <a href="stock-detail?id=${stock.id}" class="btn btn-secondary btn-sm">&larr; 返回详情</a>
+    </div>`;
+
+    // Price & Key Levels
+    html += `<div class="card mb-4">
+        <div class="card-header"><strong><i class="bi bi-bullseye"></i> 现价与关键价位</strong></div>
+        <div class="card-body">
+            <div class="row g-3 text-center">
+                <div class="col-md-3 col-6">
+                    <small class="text-muted">现价</small>
+                    <div class="fs-4 fw-bold text-primary">${formatPrice(stock.current_price)}</div>
+                </div>
+                <div class="col-md-3 col-6">
+                    <small class="text-muted">最近支撑</small>
+                    <div class="fs-5 fw-bold text-success">${result.nearest_support ? formatPrice(result.nearest_support.price) : '<span class="text-muted">—</span>'}</div>
+                    ${result.nearest_support ? `<small class="text-muted">距现价 -${result.nearest_support.distance_pct}%</small>` : ''}
+                </div>
+                <div class="col-md-3 col-6">
+                    <small class="text-muted">最近压力</small>
+                    <div class="fs-5 fw-bold text-danger">${result.nearest_resistance ? formatPrice(result.nearest_resistance.price) : '<span class="text-muted">—</span>'}</div>
+                    ${result.nearest_resistance ? `<small class="text-muted">距现价 +${result.nearest_resistance.distance_pct}%</small>` : ''}
+                </div>
+                <div class="col-md-3 col-6">
+                    <small class="text-muted">区间位置</small>
+                    <div class="fs-5 fw-bold">${result.position_in_range}%</div>
+                    <small class="text-muted">${formatPrice(result.recent_low)}-${formatPrice(result.recent_high)}</small>
+                </div>
+            </div>
+        </div>
+    </div>`;
+
+    // Entry Score Card
+    html += `<div class="card mb-4 border-${badgeClass}">
+        <div class="card-header bg-${badgeClass} text-white d-flex justify-content-between align-items-center">
+            <strong><i class="bi bi-bar-chart-fill"></i> 买入综合评分</strong>
+            <span class="fs-5 fw-bold">${result.entry_score} 分 — ${result.entry_label}</span>
+        </div>
+        <div class="card-body">
+            <div class="row mb-3">`;
+    for (const b of result.score_breakdown) {
+        const pct = Math.round(b.score / b.max * 100);
+        const barColor = pct >= 70 ? 'bg-success' : pct >= 40 ? 'bg-warning' : 'bg-danger';
+        html += `<div class="col-md-6 mb-2">
+            <div class="d-flex justify-content-between small mb-1"><span>${b.label}</span><span class="text-muted">${b.score}/${b.max}</span></div>
+            <div class="progress" style="height:6px"><div class="progress-bar ${barColor}" style="width:${pct}%"></div></div>
+            <small class="text-muted">${b.detail}</small>
+        </div>`;
+    }
+    html += `</div>`;
+
+    // Positives
+    if (result.positives.length > 0) {
+        html += '<div class="mb-2">';
+        for (const p of result.positives) {
+            html += `<div class="small text-success mb-1"><i class="bi bi-check-circle"></i> ${p}</div>`;
+        }
+        html += '</div>';
+    }
+
+    // Warnings
+    if (result.warnings.length > 0) {
+        for (const w of result.warnings) {
+            html += `<div class="small text-danger mb-1"><i class="bi bi-exclamation-circle"></i> ${w}</div>`;
+        }
+    }
+    html += '</div></div>';
+
+    // Trend & MA Indicators
+    html += `<div class="row g-2 mb-4">
+        <div class="col-md-2 col-6"><div class="card text-bg-light"><div class="card-body text-center py-2">
+            <small class="text-muted">ATR(14)</small><div class="fw-bold">${formatPrice(result.atr)} (${result.atr_pct}%)</div></div></div></div>
+        <div class="col-md-2 col-6"><div class="card text-bg-light"><div class="card-body text-center py-2">
+            <small class="text-muted">MA5</small><div class="fw-bold ${textClass(stock.current_price, result.ma5)}">${formatPrice(result.ma5)}</div></div></div></div>
+        <div class="col-md-2 col-6"><div class="card text-bg-light"><div class="card-body text-center py-2">
+            <small class="text-muted">MA10</small><div class="fw-bold ${textClass(stock.current_price, result.ma10)}">${formatPrice(result.ma10)}</div></div></div></div>
+        <div class="col-md-2 col-6"><div class="card text-bg-light"><div class="card-body text-center py-2">
+            <small class="text-muted">MA20</small><div class="fw-bold ${textClass(stock.current_price, result.ma20)}">${formatPrice(result.ma20)}</div></div></div></div>
+        <div class="col-md-2 col-6"><div class="card text-bg-light"><div class="card-body text-center py-2">
+            <small class="text-muted">MA60</small><div class="fw-bold ${textClass(stock.current_price, result.ma60)}">${formatPrice(result.ma60)}</div></div></div></div>
+        <div class="col-md-2 col-6"><div class="card text-bg-light"><div class="card-body text-center py-2">
+            <small class="text-muted">均线趋势</small><div><span class="badge bg-${result.trend_class}">${result.trend}</span></div></div></div></div>
+    </div>`;
+
+    // Volume Analysis
+    html += `<div class="card mb-4">
+        <div class="card-header"><strong><i class="bi bi-bar-chart"></i> 量能分析</strong></div>
+        <div class="card-body">
+            <p class="mb-2"><span class="badge bg-info fs-6">${result.volume_trend}</span></p>`;
+    if (result.volume_trend === '放量上涨') {
+        html += '<p class="small text-success"><i class="bi bi-check-circle"></i> 放量上涨表明资金积极介入，上涨动力充足，是较好的买入信号</p>';
+    } else if (result.volume_trend === '缩量调整') {
+        html += '<p class="small text-warning"><i class="bi bi-exclamation-circle"></i> 缩量表明市场关注度下降，若在支撑位附近缩量企稳可关注，否则建议等待放量信号</p>';
+    } else if (result.volume_trend === '量价背离') {
+        html += '<p class="small text-danger"><i class="bi bi-exclamation-triangle"></i> 量价背离表明上涨缺乏成交支撑，需警惕回调风险，建议观望</p>';
+    } else {
+        html += '<p class="small text-muted">量能表现正常，无异常信号</p>';
+    }
+    html += '</div></div>';
+
+    // Suggested Entry Zones
+    html += `<div class="card mb-4 border-success">
+        <div class="card-header bg-success text-white"><strong><i class="bi bi-cart-plus"></i> 建议买入区间</strong></div>
+        <div class="card-body">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light"><tr><th>买入价位</th><th class="text-end">价格</th><th>理由</th></tr></thead><tbody>`;
+    for (let i = 0; i < result.suggested_zones.length; i++) {
+        const z = result.suggested_zones[i];
+        const isFirst = i === 0;
+        const rowClass = isFirst ? 'table-success' : '';
+        const icon = isFirst ? '<i class="bi bi-star-fill text-success me-1"></i>' : '';
+        html += `<tr class="${rowClass}">
+            <td>${icon}<span class="badge bg-${isFirst ? 'success' : 'info'}">${z.label}</span></td>
+            <td class="text-end fw-bold text-success">${formatPrice(z.price)}</td>
+            <td class="small text-muted">${z.reason}</td>
+        </tr>`;
+    }
+    html += '</tbody></table></div></div>';
+
+    // Risk/Reward
+    const rr = result.risk_reward;
+    const rrClass = rr.ratio >= 2 ? 'text-success' : rr.ratio >= 1 ? 'text-warning' : 'text-danger';
+    html += `<div class="card mb-4">
+        <div class="card-header"><strong><i class="bi bi-calculator"></i> 风险收益分析</strong></div>
+        <div class="card-body">
+            <div class="row text-center g-3">
+                <div class="col-md-4 col-4">
+                    <small class="text-muted">下跌风险（至支撑）</small>
+                    <div class="fs-5 fw-bold text-danger">-${rr.risk_pct}%</div>
+                </div>
+                <div class="col-md-4 col-4">
+                    <small class="text-muted">上涨空间（至压力）</small>
+                    <div class="fs-5 fw-bold text-success">+${rr.reward_pct}%</div>
+                </div>
+                <div class="col-md-4 col-4">
+                    <small class="text-muted">盈亏比</small>
+                    <div class="fs-5 fw-bold ${rrClass}">${rr.ratio.toFixed(1)} : 1</div>
+                    ${rr.ratio >= 2 ? '<small class="text-success">较好</small>' : rr.ratio >= 1 ? '<small class="text-warning">一般</small>' : '<small class="text-danger">偏低</small>'}
+                </div>
+            </div>
+        </div>
+    </div>`;
+
+    // Support & Resistance
+    html += '<div class="row g-3 mb-4"><div class="col-md-6">';
+    html += '<div class="card"><div class="card-header"><strong><i class="bi bi-shield-check"></i> 下方支撑</strong></div><div class="card-body">';
+    if (result.supports.length > 0) {
+        html += '<table class="table table-sm"><thead><tr><th>价格</th><th>触及次数</th><th>区间</th></tr></thead><tbody>';
+        for (const s of result.supports) {
+            html += `<tr><td class="fw-bold text-success">${formatPrice(s.price)}</td><td>${s.touches}次</td><td class="text-muted">${s.zone}</td></tr>`;
+        }
+        html += '</tbody></table>';
+    } else { html += '<p class="text-muted">暂无支撑位数据</p>'; }
+    html += '</div></div></div>';
+
+    html += '<div class="col-md-6">';
+    html += '<div class="card"><div class="card-header"><strong><i class="bi bi-shield-x"></i> 上方压力</strong></div><div class="card-body">';
+    if (result.resistances.length > 0) {
+        html += '<table class="table table-sm"><thead><tr><th>价格</th><th>触及次数</th><th>区间</th></tr></thead><tbody>';
+        for (const r of result.resistances) {
+            html += `<tr><td class="fw-bold text-danger">${formatPrice(r.price)}</td><td>${r.touches}次</td><td class="text-muted">${r.zone}</td></tr>`;
+        }
+        html += '</tbody></table>';
+    } else { html += '<p class="text-muted">暂无压力位数据</p>'; }
+    html += '</div></div></div></div>';
+
+    // Consolidation
+    html += '<div class="card mb-4">';
+    html += '<div class="card-header"><strong><i class="bi bi-box"></i> 整理平台</strong></div><div class="card-body">';
+    if (result.consolidation) {
+        const c = result.consolidation;
+        html += `<p>上沿: <span class="fw-bold text-danger">${formatPrice(c.upper)}</span> | 下沿: <span class="fw-bold text-success">${formatPrice(c.lower)}</span></p>
+            <p class="text-muted small">振幅 ${c.range_pct}% | ATR ${formatPrice(c.atr)}</p>`;
+        html += '<p class="small text-muted"><i class="bi bi-info-circle"></i> 盘整期间可在下沿附近建仓，等待突破</p>';
+    } else {
+        html += '<p class="text-muted">未检测到明显整理平台</p>';
+    }
+    html += '</div></div>';
+
+    // News
+    html += newsHtml;
+
+    html += `<div class="text-muted small mt-2">分析基于最近 ${result.data_days} 个交易日数据，仅供参考不构成投资建议</div>`;
+
+    content.innerHTML = html;
+}
+
+function render() {
     const params = new URLSearchParams(location.search);
     const id = parseInt(params.get('id'));
     if (!id) {
@@ -75,6 +301,12 @@ async function render() {
                 ${newsHtml}
             </div>
             <div class="mt-3"><a href="stock-detail?id=${stock.id}" class="btn btn-secondary btn-sm">&larr; 返回详情</a></div>`;
+            return;
+        }
+
+        // Watching stocks get an entry/buy analysis instead of position management
+        if (stock.status === 'watching') {
+            renderEntryAnalysis(stock, klines);
             return;
         }
 

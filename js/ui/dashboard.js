@@ -1,6 +1,6 @@
 // Dashboard UI — renders portfolio tabs, summary cards, alerts, stock table
 
-import { getPortfolios, getStocksByPortfolio, getAllData, refreshStockPrices, saveSnapshots, exportCsv } from '../api.js';
+import { getPortfolios, getStocksByPortfolio, getAllData, refreshStockPrices, saveSnapshots, exportCsv, cleanupSoldStocks } from '../api.js';
 import { alertsFromStocks, summaryFromStocks, stopLossStatus, rowClass, statusColor } from '../computations.js';
 import { formatPrice, formatPct, actionLabel, actionBadgeClass, textClass, bgClass, statusLabel, statusBadgeClass } from '../utils.js';
 
@@ -349,6 +349,11 @@ function bindEvents() {
 }
 
 // ── Init ──────────────────────────────────────────────
+
+// One-time cleanup: rename sold stocks to avoid code conflicts
+cleanupSoldStocks().then(count => {
+    if (count > 0) console.log(`Cleaned up ${count} sold stock codes`);
+}).catch(e => console.warn('Sold stock cleanup:', e.message));
 
 const params = new URLSearchParams(location.search);
 const pid = params.get('pid') ? parseInt(params.get('pid')) : null;
