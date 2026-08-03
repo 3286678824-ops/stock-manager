@@ -12,7 +12,8 @@ function flash(msg, type = 'success') {
     el.className = `alert alert-${type} alert-dismissible fade show py-2`;
     el.innerHTML = `${msg}<button class="btn btn-close" data-bs-dismiss="alert"></button>`;
     c.appendChild(el);
-    setTimeout(() => el.remove(), 4000);
+    // Don't auto-dismiss warnings (they may contain action links)
+    if (type !== 'warning') setTimeout(() => el.remove(), 4000);
 }
 
 function detectMarketLocal(code) {
@@ -246,6 +247,12 @@ function bindForm(editing, stock) {
                 flash(`${data.name} 更新成功`);
             } else {
                 const newStock = await createStock(data);
+                if (newStock.duplicate) {
+                    // Stock already exists as active — show link to edit it
+                    const statusText = newStock.existingStatus === 'watching' ? '关注' : '持有';
+                    flash(`该分组中已存在股票 "${data.code}"（${statusText}状态），<a href="stock-form?id=${newStock.existingId}" class="alert-link">点击编辑</a>`, 'warning');
+                    return;
+                }
                 // Create initial trade log (skip if reactivating a sold stock — updateStock already handles it)
                 if (!newStock.reactivated && (data.quantity > 0 || data.status === 'watching')) {
                     const isWatch = data.status === 'watching';

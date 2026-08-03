@@ -161,13 +161,13 @@ export async function createStock(data) {
         .select('id, status').eq('portfolio_id', data.portfolioId).eq('code', data.code).limit(1);
 
     if (!existingRows || existingRows.length === 0) {
-        // Shouldn't happen — unique constraint says it exists but query didn't find it
         throw new Error('DUPLICATE');
     }
 
     const existing = existingRows[0];
     if (existing.status !== 'sold') {
-        throw new Error('DUPLICATE');
+        // Return duplicate info so the UI can show a helpful message
+        return { duplicate: true, existingId: existing.id, existingStatus: existing.status };
     }
 
     // Reactivate the sold stock with new values
