@@ -309,22 +309,39 @@ export async function fetchKlineCached(code, days = 60) {
         }
     } catch { /* ignore */ }
 
-    // Race: direct fetch vs Edge Function — whichever responds first
-    const direct = fetchKlineDirect(code, days);
-    const edge = fetchKline(code, days);
-    const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 10000));
-
+    // Race: direct fetch vs Edge Function — take first valid result
     let data;
     try {
-        data = await Promise.race([direct, edge, timeout]);
+        data = await new Promise((resolve, reject) => {
+            let settled = false;
+            const done = (result) => {
+                if (settled) return;
+                if (result && Array.isArray(result) && result.length > 0) {
+                    settled = true;
+                    resolve(result);
+                }
+            };
+            const fail = (err) => {
+                if (settled) return;
+                settled = true;
+                reject(err);
+            };
+
+            fetchKlineDirect(code, days).then(done).catch(() => {});
+            fetchKline(code, days).then(done).catch(fail);
+            setTimeout(() => {
+                if (!settled) {
+                    settled = true;
+                    // Try stale cache before giving up
+                    try {
+                        const raw = localStorage.getItem(cacheKey);
+                        if (raw) resolve(JSON.parse(raw).data);
+                        else reject(new Error('TIMEOUT'));
+                    } catch { reject(new Error('TIMEOUT')); }
+                }
+            }, 10000);
+        });
     } catch (e) {
-        // Both failed or timed out — try cache as last resort
-        if (e.message === 'TIMEOUT') {
-            try {
-                const raw = localStorage.getItem(cacheKey);
-                if (raw) return JSON.parse(raw).data;
-            } catch { /* ignore */ }
-        }
         throw e;
     }
 
