@@ -295,7 +295,7 @@ export async function fetchStockNews(code) {
     return resp.json();
 }
 
-// Cached kline fetch — cache-first, then background refresh
+// Cached kline fetch
 export async function fetchKlineCached(code, days = 60) {
     const cacheKey = `kline_${code}_${days}`;
 
@@ -309,49 +309,26 @@ export async function fetchKlineCached(code, days = 60) {
         }
     } catch { /* ignore */ }
 
-    // Race: direct fetch vs Edge Function — take first valid result
-    let data;
+    // Fetch via Edge Function with 8s timeout, fall back to stale cache
     try {
-        data = await new Promise((resolve, reject) => {
-            let settled = false;
-            const done = (result) => {
-                if (settled) return;
-                if (result && Array.isArray(result) && result.length > 0) {
-                    settled = true;
-                    resolve(result);
-                }
-            };
-            const fail = (err) => {
-                if (settled) return;
-                settled = true;
-                reject(err);
-            };
-
-            fetchKlineDirect(code, days).then(done).catch(() => {});
-            fetchKline(code, days).then(done).catch(fail);
-            setTimeout(() => {
-                if (!settled) {
-                    settled = true;
-                    // Try stale cache before giving up
-                    try {
-                        const raw = localStorage.getItem(cacheKey);
-                        if (raw) resolve(JSON.parse(raw).data);
-                        else reject(new Error('TIMEOUT'));
-                    } catch { reject(new Error('TIMEOUT')); }
-                }
-            }, 10000);
-        });
+        const data = await Promise.race([
+            fetchKline(code, days),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('TIMEOUT')), 8000)),
+        ]);
+        if (data && Array.isArray(data) && data.length > 0) {
+            try {
+                localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
+            } catch { /* quota exceeded */ }
+        }
+        return data;
     } catch (e) {
+        // Fall back to stale cache on any error
+        try {
+            const raw = localStorage.getItem(cacheKey);
+            if (raw) return JSON.parse(raw).data;
+        } catch { /* ignore */ }
         throw e;
     }
-
-    // A successful result; cache it
-    if (data && Array.isArray(data) && data.length > 0) {
-        try {
-            localStorage.setItem(cacheKey, JSON.stringify({ ts: Date.now(), data }));
-        } catch { /* quota exceeded */ }
-    }
-    return data;
 }
 
 async function fetchKlineDirect(code, days = 60) {
