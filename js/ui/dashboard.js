@@ -3,11 +3,73 @@
 import { getPortfolios, getStocksByPortfolio, getAllData, refreshStockPrices, saveSnapshots, exportCsv, cleanupSoldStocks } from '../api.js';
 import { alertsFromStocks, summaryFromStocks, stopLossStatus, rowClass, statusColor } from '../computations.js';
 import { formatPrice, formatPct, actionLabel, actionBadgeClass, textClass, bgClass, statusLabel, statusBadgeClass } from '../utils.js';
+import { AutoRefresh } from '../auto-refresh.js';
 
 const content = document.getElementById('content');
 let activePid = null;
 let allPortfolios = [];
 let currentStocks = [];
+
+// ── Auto-refresh ──────────────────────────────────────
+
+const AUTO_REFRESH_KEY = 'stock_manager_auto_refresh';
+
+let autoRefresh = null;
+let autoRefreshEnabled = localStorage.getItem(AUTO_REFRESH_KEY) === 'true';
+
+function createAutoRefresh() {
+    if (autoRefresh) autoRefresh.stop();
+    autoRefresh = new AutoRefresh(async () => {
+        await refreshStockPrices();
+        localStorage.removeItem('stock_manager_cache');
+        await render(activePid);
+    }, {
+        intervalMs: 60_000,
+        onStatus: (status) => {
+            const dot = document.getElementById('auto-refresh-dot');
+            const btn = document.getElementById('auto-refresh-btn');
+            if (!dot || !btn) return;
+            if (status === 'refreshing') {
+                dot.className = 'spin me-1';
+            } else if (status === 'running') {
+                dot.className = 'spinner-grow spinner-grow-sm text-success me-1';
+            } else {
+                dot.className = 'd-none';
+            }
+        },
+        onError: (e) => {
+            flash('自动刷新失败: ' + e.message, 'danger');
+        },
+    });
+    if (autoRefreshEnabled) autoRefresh.start();
+}
+
+function toggleAutoRefresh() {
+    autoRefreshEnabled = !autoRefreshEnabled;
+    localStorage.setItem(AUTO_REFRESH_KEY, autoRefreshEnabled);
+    if (autoRefreshEnabled) {
+        if (!autoRefresh) createAutoRefresh();
+        else autoRefresh.start();
+    } else {
+        if (autoRefresh) autoRefresh.stop();
+    }
+    updateAutoRefreshBtn();
+}
+
+function updateAutoRefreshBtn() {
+    const btn = document.getElementById('auto-refresh-btn');
+    const dot = document.getElementById('auto-refresh-dot');
+    if (!btn) return;
+    if (autoRefreshEnabled) {
+        btn.className = 'btn btn-sm btn-outline-success';
+        btn.title = '自动刷新中 (每60秒) — 点击关闭';
+        if (dot) dot.className = autoRefresh && autoRefresh.isRunning ? 'spinner-grow spinner-grow-sm text-success me-1' : 'd-none';
+    } else {
+        btn.className = 'btn btn-sm btn-outline-secondary';
+        btn.title = '自动刷新已关闭 — 点击开启';
+        if (dot) dot.className = 'd-none';
+    }
+}
 
 // ── Flash messages ────────────────────────────────────
 
@@ -222,6 +284,7 @@ async function render(pid) {
                     <div class="d-flex flex-wrap gap-1 justify-content-end">
                         <button class="btn btn-sm btn-outline-secondary" id="snapshot-btn"><i class="bi bi-camera"></i> 快照</button>
                         <button class="btn btn-sm btn-outline-primary" id="refresh-table-btn"><i class="bi bi-arrow-clockwise"></i> 刷新</button>
+                        <button class="btn btn-sm btn-outline-secondary" id="auto-refresh-btn" title="自动刷新已关闭 — 点击开启"><span id="auto-refresh-dot" class="d-none"></span><i class="bi bi-arrow-repeat"></i> 自动</button>
                         <a href="stock-form?pid=${active.id}" class="btn btn-sm btn-primary"><i class="bi bi-plus-lg"></i> 添加</a>
                     </div>
                 </div>
@@ -329,6 +392,15 @@ function bindEvents() {
             flash('导出失败: ' + e.message, 'danger');
         }
     });
+
+    // Auto-refresh toggle
+    document.getElementById('auto-refresh-btn')?.addEventListener('click', () => {
+        toggleAutoRefresh();
+    });
+    updateAutoRefreshBtn();
+    if (autoRefreshEnabled) {
+        createAutoRefresh();
+    }
 
     // Delete buttons
     document.querySelectorAll('[data-delete]').forEach(btn => {
