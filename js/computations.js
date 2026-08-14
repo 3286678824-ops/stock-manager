@@ -105,6 +105,20 @@ export function statusColor(status) {
 }
 
 /**
+ * Map stop-loss/take-profit status to a single recommended action label + badge.
+ * Returns null for 'normal' (needs K-line analysis for add/reduce recommendation).
+ */
+export function actionFromStatus(status) {
+    const map = {
+        stop_hit: { label: '止损离场', badge: 'danger' },
+        stop_warn: { label: '警惕止损', badge: 'warning' },
+        profit_hit: { label: '止盈减仓', badge: 'success' },
+        profit_warn: { label: '接近止盈', badge: 'info' },
+    };
+    return map[status] || null;
+}
+
+/**
  * Generate alerts from stocks array
  */
 export function alertsFromStocks(stocks) {

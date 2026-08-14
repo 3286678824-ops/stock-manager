@@ -1,9 +1,10 @@
 // Dashboard UI — renders portfolio tabs, summary cards, alerts, stock table
 
-import { getPortfolios, getStocksByPortfolio, getAllData, refreshStockPrices, saveSnapshots, exportCsv, cleanupSoldStocks } from '../api.js';
-import { alertsFromStocks, summaryFromStocks, stopLossStatus, rowClass, statusColor } from '../computations.js';
+import { getPortfolios, getStocksByPortfolio, getAllData, refreshStockPrices, saveSnapshots, exportCsv, cleanupSoldStocks, fetchKlineCached } from '../api.js';
+import { alertsFromStocks, summaryFromStocks, stopLossStatus, rowClass, statusColor, actionFromStatus } from '../computations.js';
 import { formatPrice, formatPct, actionLabel, actionBadgeClass, textClass, bgClass, statusLabel, statusBadgeClass } from '../utils.js';
 import { AutoRefresh } from '../auto-refresh.js';
+import { recommendAddReduce } from '../analysis.js';
 
 const content = document.getElementById('content');
 let activePid = null;
@@ -159,6 +160,57 @@ function renderSummaryCards(summary) {
     </div>`;
 }
 
+function renderActionCard(stocks) {
+    const holding = stocks.filter(s => s.status === 'holding');
+    if (holding.length === 0) return '';
+
+    const rows = holding.map(s => {
+        const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
+        const fast = actionFromStatus(status);
+        const name = `${s.name} <small class="text-muted ms-1">${s.code}</small>`;
+        if (fast) {
+            return `<tr><td class="text-nowrap">${name}</td><td class="text-end"><span class="badge bg-${fast.badge}">${fast.label}</span></td></tr>`;
+        }
+        return `<tr><td class="text-nowrap">${name}</td><td class="text-end" data-action-cell="${s.id}"><span class="badge bg-secondary">分析中…</span></td></tr>`;
+    }).join('');
+
+    return `
+    <div class="card mb-3">
+        <div class="card-header py-2 px-3" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#action-summary-body" role="button" aria-expanded="false">
+            <div class="d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-lightbulb text-warning"></i> 操作建议 <span class="badge bg-primary">${holding.length}</span></span>
+                <i class="bi bi-chevron-down"></i>
+            </div>
+        </div>
+        <div class="collapse" id="action-summary-body">
+            <div class="card-body py-0">
+                <table class="table table-sm align-middle mb-0">
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        </div>
+    </div>`;
+}
+
+async function loadAddReduceActions(stocks) {
+    const holding = stocks.filter(s => s.status === 'holding');
+    const normal = holding.filter(s =>
+        stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status) === 'normal');
+    for (const s of normal) {
+        const cell = document.querySelector(`[data-action-cell="${s.id}"]`);
+        if (!cell) continue;
+        try {
+            const klines = await fetchKlineCached(s.code, 60);
+            const rec = recommendAddReduce(klines, s.current_price, s.cost_price);
+            cell.innerHTML = rec
+                ? `<span class="badge bg-${rec.badge}">${rec.label}</span>`
+                : '<span class="badge bg-secondary">数据不足</span>';
+        } catch {
+            cell.innerHTML = '<span class="badge bg-secondary">分析失败</span>';
+        }
+    }
+}
+
 function renderStockTable(stocks) {
     const activeStocks = stocks.filter(s => s.status !== 'sold');
     const soldStocks = stocks.filter(s => s.status === 'sold');
@@ -199,14 +251,14 @@ function renderStockTable(stocks) {
             </td>
             <td class="text-end${muted}">${isSold ? '-' : formatPrice(s.cost_price)}</td>
             <td class="text-end${muted}${isSold ? '' : ' ' + textClass(s.current_price, s.prev_close_price) + ' fw-bold'}">${formatPrice(s.current_price)}</td>
-            <td class="text-end text-muted d-none d-md-table-cell">${formatPrice(s.prev_close_price)}</td>
+            <td class="text-end text-muted d-none d-xl-table-cell">${formatPrice(s.prev_close_price)}</td>
             <td class="text-end${muted}${isSold ? '' : ' ' + textClass(dcPct) + ' fw-bold'}">${formatPct(dcPct)}</td>
             <td class="text-end${muted}">${isSold ? '0' : s.quantity}</td>
             <td class="text-end${muted}">${isSold ? '-' : formatPrice(mv)}</td>
             <td class="text-end${muted}${isSold ? '' : ' ' + textClass(pl) + ' fw-bold'}">${isSold ? '-' : formatPrice(pl)}</td>
             <td class="text-end${muted}${isSold ? '' : ' ' + textClass(plPct)}">${isSold ? '-' : formatPrice(plPct) + '%'}</td>
-            <td class="text-end${muted}">${isSold ? '-' : stopCell}</td>
-            <td class="text-end${muted}">${isSold ? '-' : profitCell}</td>
+            <td class="text-end${muted} d-none d-xl-table-cell">${isSold ? '-' : stopCell}</td>
+            <td class="text-end${muted} d-none d-xl-table-cell">${isSold ? '-' : profitCell}</td>
             <td class="text-center text-nowrap">
                 ${isSold ? '' : `<a href="trade-form?id=${s.id}" class="btn btn-sm btn-outline-success" title="记录操作"><i class="bi bi-pencil-square"></i></a>`}
                 <a href="stock-form?id=${s.id}" class="btn btn-sm ${isSold ? 'btn-outline-secondary' : 'btn-outline-warning'}" title="编辑"><i class="bi bi-gear"></i></a>
@@ -276,6 +328,7 @@ async function render(pid) {
             ${allPortfolios.length > 1 ? `<ul class="nav nav-tabs mb-3">${renderTabs(allPortfolios, active)}</ul>` : ''}
             <h5 class="mb-3"><i class="bi bi-speedometer2"></i> ${active.name}
                 <small class="text-muted fs-6">${active.description || ''}</small></h5>
+            ${renderActionCard(currentStocks)}
             ${renderAlerts(currentStocks)}
             ${renderSummaryCards(summary)}
             <div class="card">
@@ -293,10 +346,10 @@ async function render(pid) {
                         <thead class="table-light">
                             <tr>
                                 <th style="width:80px">代码</th><th>名称</th>
-                                <th class="text-end">成本价</th><th class="text-end">现价</th><th class="text-end d-none d-md-table-cell">昨收</th>
+                                <th class="text-end">成本价</th><th class="text-end">现价</th><th class="text-end d-none d-xl-table-cell">昨收</th>
                                 <th class="text-end">涨跌</th><th class="text-end">数量</th><th class="text-end">市值</th>
                                 <th class="text-end">盈亏</th><th class="text-end">收益率</th>
-                                <th class="text-end " style="width:70px">止损价</th><th class="text-end" style="width:70px">止盈价</th>
+                                <th class="text-end d-none d-xl-table-cell" style="width:70px">止损价</th><th class="text-end d-none d-xl-table-cell" style="width:70px">止盈价</th>
                                 <th class="text-center">操作</th>
                             </tr>
                         </thead>
@@ -306,6 +359,7 @@ async function render(pid) {
             </div>`;
 
         bindEvents();
+        loadAddReduceActions(currentStocks);
     };
 
     try {

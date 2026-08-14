@@ -1024,3 +1024,20 @@ export function analyzeAdd(klines, currentPrice, costPrice) {
         data_days: klines.length,
     };
 }
+
+// ── Holding Action Recommendation (for dashboard summary) ──
+
+/**
+ * Combine add-position and risk analysis into a single recommended action.
+ * Used by the dashboard "操作建议" summary card (slow path, needs K-line data).
+ * Returns { label, badge } or null if there isn't enough data.
+ */
+export function recommendAddReduce(klines, currentPrice, costPrice) {
+    if (!Array.isArray(klines) || klines.length < 14) return null;
+    const add = analyzeAdd(klines, currentPrice, costPrice);
+    const risk = assessRisk(klines, currentPrice, costPrice);
+    if (risk.level === '高风险') return { label: '建议减仓', badge: 'danger' };
+    if (add.add_label === '建议加仓') return { label: '建议加仓', badge: 'success' };
+    if (add.add_label === '谨慎加仓') return { label: '谨慎加仓', badge: 'warning' };
+    return { label: '持有观望', badge: 'secondary' };
+}
