@@ -166,12 +166,17 @@ function renderActionCard(stocks) {
 
     const rows = holding.map(s => {
         const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
-        const fast = actionFromStatus(status);
+        const statusBadge = actionFromStatus(status);
+        const isExit = status === 'stop_hit' || status === 'profit_hit';
         const name = `${s.name} <small class="text-muted ms-1">${s.code}</small>`;
-        if (fast) {
-            return `<tr><td class="text-nowrap">${name}</td><td class="text-end"><span class="badge bg-${fast.badge}">${fast.label}</span></td></tr>`;
+        let badges = '';
+        if (statusBadge) {
+            badges += `<span class="badge bg-${statusBadge.badge} me-1">${statusBadge.label}</span>`;
         }
-        return `<tr><td class="text-nowrap">${name}</td><td class="text-end" data-action-cell="${s.id}"><span class="badge bg-secondary">分析中…</span></td></tr>`;
+        if (!isExit) {
+            badges += `<span class="badge bg-secondary" data-action-cell="${s.id}">分析中…</span>`;
+        }
+        return `<tr><td class="text-nowrap">${name}</td><td class="text-end">${badges}</td></tr>`;
     }).join('');
 
     return `
@@ -194,19 +199,21 @@ function renderActionCard(stocks) {
 
 async function loadAddReduceActions(stocks) {
     const holding = stocks.filter(s => s.status === 'holding');
-    const normal = holding.filter(s =>
-        stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status) === 'normal');
-    for (const s of normal) {
+    const needsAction = holding.filter(s => {
+        const st = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
+        return st !== 'stop_hit' && st !== 'profit_hit';
+    });
+    for (const s of needsAction) {
         const cell = document.querySelector(`[data-action-cell="${s.id}"]`);
         if (!cell) continue;
         try {
             const klines = await fetchKlineCached(s.code, 60);
             const rec = recommendAddReduce(klines, s.current_price, s.cost_price);
-            cell.innerHTML = rec
+            cell.outerHTML = rec
                 ? `<span class="badge bg-${rec.badge}">${rec.label}</span>`
                 : '<span class="badge bg-secondary">数据不足</span>';
         } catch {
-            cell.innerHTML = '<span class="badge bg-secondary">分析失败</span>';
+            cell.outerHTML = '<span class="badge bg-secondary">分析失败</span>';
         }
     }
 }
