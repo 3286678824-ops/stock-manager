@@ -191,8 +191,8 @@ function renderActionCard(stocks) {
         <div class="card-header py-2 px-3" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#action-summary-body" role="button" aria-expanded="false">
             <div class="d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-lightbulb text-warning"></i> 操作建议
-                    <span class="ms-2 small"><i class="bi bi-circle-fill text-success me-1"></i>持有 ${holdingCount}</span>
-                    <span class="ms-2 small"><i class="bi bi-circle-fill text-info me-1"></i>关注 ${watchingCount}</span>
+                    ${holdingCount > 0 ? `<i class="bi bi-circle-fill text-success ms-2" title="持有 ${holdingCount}"></i>` : ''}
+                    ${watchingCount > 0 ? `<i class="bi bi-circle-fill text-info ms-1" title="关注 ${watchingCount}"></i>` : ''}
                 </span>
                 <i class="bi bi-chevron-down"></i>
             </div>
