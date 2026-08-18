@@ -90,11 +90,12 @@ async function render() {
         </div>
         </div></div>
         <div id="watching-note" class="col-12" style="display:none">
-            <div class="alert alert-info py-2 mb-0"><i class="bi bi-eye"></i> 关注模式：无需填写数量和成本价，添加后可设置止盈止损提醒</div>
+            <div class="alert alert-info py-2 mb-0"><i class="bi bi-eye"></i> 关注模式：无需填写数量和成本价，止损止盈不适用</div>
         </div>
         <div id="sold-note" class="col-12" style="display:none">
             <div class="alert alert-secondary py-2 mb-0"><i class="bi bi-archive"></i> 已清仓：数量和成本价已清零</div>
         </div>
+        <div id="stop-profit-row" class="col-12"><div class="row g-3">
         <div class="col-sm-6 col-12">
             <label class="form-label">止损价</label>
             <input type="number" step="0.001" class="form-control" name="stop_loss_price" value="${stock && stock.stop_loss_price ? stock.stop_loss_price : ''}" placeholder="留空则不启用">
@@ -103,6 +104,7 @@ async function render() {
             <label class="form-label">止盈价</label>
             <input type="number" step="0.001" class="form-control" name="take_profit_price" value="${stock && stock.take_profit_price ? stock.take_profit_price : ''}" placeholder="留空则不启用">
         </div>
+        </div></div>
         <div class="col-12">
             <button type="submit" class="btn btn-primary">${editing ? '保存修改' : '添加股票'}</button>
             <a href="index.html${editing ? '?pid=' + stock.portfolio_id : ''}" class="btn btn-secondary ms-2">取消</a>
@@ -129,11 +131,13 @@ function bindForm(editing, stock) {
         const costQtyRow = document.getElementById('cost-qty-row');
         const watchingNote = document.getElementById('watching-note');
         const soldNote = document.getElementById('sold-note');
+        const stopProfitRow = document.getElementById('stop-profit-row');
 
         if (status === 'watching') {
             costQtyRow.style.display = 'none';
             watchingNote.style.display = '';
             soldNote.style.display = 'none';
+            stopProfitRow.style.display = 'none';
             qtyInput.value = '0';
             qtyInput.required = false;
             costInput.value = '0';
@@ -142,6 +146,7 @@ function bindForm(editing, stock) {
             costQtyRow.style.display = 'none';
             watchingNote.style.display = 'none';
             soldNote.style.display = '';
+            stopProfitRow.style.display = 'none';
             qtyInput.value = '0';
             qtyInput.required = false;
             costInput.required = false;
@@ -149,6 +154,7 @@ function bindForm(editing, stock) {
             costQtyRow.style.display = '';
             watchingNote.style.display = 'none';
             soldNote.style.display = 'none';
+            stopProfitRow.style.display = '';
             qtyInput.required = true;
             costInput.required = true;
             if (!qtyInput.value || qtyInput.value === '0') qtyInput.value = '100';

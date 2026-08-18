@@ -54,7 +54,7 @@ export function dayChangePct(currentPrice, prevClosePrice) {
  * Returns: 'normal' | 'stop_warn' | 'stop_hit' | 'profit_warn' | 'profit_hit'
  */
 export function stopLossStatus(currentPrice, stopLossPrice, takeProfitPrice, stockStatus) {
-    if (stockStatus === 'sold' || currentPrice === 0) return 'normal';
+    if (stockStatus === 'sold' || stockStatus === 'watching' || currentPrice === 0) return 'normal';
     let result = 'normal';
 
     if (stopLossPrice && stopLossPrice > 0) {
@@ -128,7 +128,7 @@ export function alertsFromStocks(stocks) {
     const profit_warn = [];
 
     for (const s of stocks) {
-        if (s.status === 'sold') continue;
+        if (s.status === 'sold' || s.status === 'watching') continue;
         const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
         if (status === 'stop_hit') stop_hit.push(s);
         else if (status === 'stop_warn') stop_warn.push(s);

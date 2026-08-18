@@ -54,6 +54,12 @@ async function render() {
                 <label class="form-label">数量（股） <span class="text-danger">*</span></label>
                 <input type="number" step="1" class="form-control" name="quantity" value="100" required min="1">
             </div>
+            <div class="col-12" id="sell-to-watch-field" style="display:none">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="sell_to_watch" id="sell-to-watch" value="1">
+                    <label class="form-check-label" for="sell-to-watch"><i class="bi bi-eye"></i> 清仓后转入关注列表（无需重新添加）</label>
+                </div>
+            </div>
             <div class="col-12">
                 <label class="form-label">备注</label>
                 <input type="text" class="form-control" name="note" placeholder="可选">
@@ -79,11 +85,13 @@ async function render() {
         // Show/hide fields based on action
         const qtyField = document.getElementById('qty-field');
         const stopProfitFields = document.getElementById('stop-profit-fields');
+        const sellToWatchField = document.getElementById('sell-to-watch-field');
         document.querySelectorAll('[name="action"]').forEach(radio => {
             radio.addEventListener('change', () => {
                 const isBuy = radio.value === 'buy';
                 qtyField.style.display = radio.value === 'watch' ? 'none' : '';
                 stopProfitFields.style.display = isBuy ? '' : 'none';
+                sellToWatchField.style.display = radio.value === 'sell' ? '' : 'none';
             });
         });
 
@@ -129,7 +137,8 @@ async function render() {
                     const newQty = stock.quantity - quantity;
                     const updates = { quantity: newQty, currentPrice: price };
                     if (newQty === 0) {
-                        updates.status = 'sold';
+                        const toWatch = fd.get('sell_to_watch') === '1';
+                        updates.status = toWatch ? 'watching' : 'sold';
                         updates.costPrice = 0;
                     }
                     await updateStock(stock.id, updates);

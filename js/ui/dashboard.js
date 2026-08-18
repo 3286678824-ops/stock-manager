@@ -4,7 +4,7 @@ import { getPortfolios, getStocksByPortfolio, getAllData, refreshStockPrices, sa
 import { alertsFromStocks, summaryFromStocks, stopLossStatus, rowClass, statusColor, actionFromStatus } from '../computations.js';
 import { formatPrice, formatPct, actionLabel, actionBadgeClass, textClass, bgClass, statusLabel, statusBadgeClass } from '../utils.js';
 import { AutoRefresh } from '../auto-refresh.js';
-import { recommendAddReduce } from '../analysis.js';
+import { recommendAddReduce, analyzeEntry } from '../analysis.js';
 
 const content = document.getElementById('content');
 let activePid = null;
@@ -161,29 +161,40 @@ function renderSummaryCards(summary) {
 }
 
 function renderActionCard(stocks) {
-    const holding = stocks.filter(s => s.status === 'holding');
-    if (holding.length === 0) return '';
+    const actionable = stocks.filter(s => s.status === 'holding' || s.status === 'watching');
+    if (actionable.length === 0) return '';
 
-    const rows = holding.map(s => {
+    const rows = actionable.map(s => {
+        const isWatching = s.status === 'watching';
         const status = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
         const statusBadge = actionFromStatus(status);
         const isExit = status === 'stop_hit' || status === 'profit_hit';
         const name = `${s.name} <small class="text-muted ms-1">${s.code}</small>`;
+        const leftBadge = isWatching
+            ? '<span class="badge bg-info text-white">关注</span>'
+            : '<span class="badge bg-success">持有</span>';
         let badges = '';
-        if (statusBadge) {
+        if (!isWatching && statusBadge) {
             badges += `<span class="badge bg-${statusBadge.badge} me-1">${statusBadge.label}</span>`;
         }
         if (!isExit) {
             badges += `<span class="badge bg-secondary" data-action-cell="${s.id}">分析中…</span>`;
         }
-        return `<tr><td class="text-nowrap">${name}</td><td class="text-end">${badges}</td></tr>`;
+        return `<tr><td class="text-nowrap">${leftBadge}</td><td class="text-nowrap">${name}</td><td class="text-end">${badges}</td></tr>`;
     }).join('');
+
+    const holdingCount = actionable.filter(s => s.status === 'holding').length;
+    const watchingCount = actionable.filter(s => s.status === 'watching').length;
 
     return `
     <div class="card mb-3">
         <div class="card-header py-2 px-3" style="cursor:pointer" data-bs-toggle="collapse" data-bs-target="#action-summary-body" role="button" aria-expanded="false">
             <div class="d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-lightbulb text-warning"></i> 操作建议 <span class="badge bg-primary">${holding.length}</span></span>
+                <span><i class="bi bi-lightbulb text-warning"></i> 操作建议
+                    <span class="badge bg-primary">${actionable.length}</span>
+                    <span class="badge bg-success ms-1">持有 ${holdingCount}</span>
+                    <span class="badge bg-info ms-1">关注 ${watchingCount}</span>
+                </span>
                 <i class="bi bi-chevron-down"></i>
             </div>
         </div>
@@ -198,8 +209,8 @@ function renderActionCard(stocks) {
 }
 
 async function loadAddReduceActions(stocks) {
-    const holding = stocks.filter(s => s.status === 'holding');
-    const needsAction = holding.filter(s => {
+    const actionable = stocks.filter(s => s.status === 'holding' || s.status === 'watching');
+    const needsAction = actionable.filter(s => {
         const st = stopLossStatus(s.current_price, s.stop_loss_price, s.take_profit_price, s.status);
         return st !== 'stop_hit' && st !== 'profit_hit';
     });
@@ -208,7 +219,15 @@ async function loadAddReduceActions(stocks) {
         if (!cell) continue;
         try {
             const klines = await fetchKlineCached(s.code, 60);
-            const rec = recommendAddReduce(klines, s.current_price, s.cost_price);
+            let rec = null;
+            if (s.status === 'watching') {
+                const entry = analyzeEntry(klines, s.current_price);
+                if (!entry.error) {
+                    rec = { label: entry.entry_label, badge: entry.entry_badge_class };
+                }
+            } else {
+                rec = recommendAddReduce(klines, s.current_price, s.cost_price);
+            }
             cell.outerHTML = rec
                 ? `<span class="badge bg-${rec.badge}">${rec.label}</span>`
                 : '<span class="badge bg-secondary">数据不足</span>';

@@ -144,8 +144,8 @@ export async function createStock(data) {
         prev_close_price: data.prevClosePrice || data.currentPrice || 0,
         quantity: data.quantity,
         status: data.status || 'holding',
-        stop_loss_price: data.stopLossPrice || null,
-        take_profit_price: data.takeProfitPrice || null,
+        stop_loss_price: (data.status || 'holding') === 'watching' ? null : (data.stopLossPrice || null),
+        take_profit_price: (data.status || 'holding') === 'watching' ? null : (data.takeProfitPrice || null),
     };
 
     // Try insert first
@@ -189,6 +189,12 @@ export async function updateStock(id, data) {
     if (data.stopLossPrice !== undefined) updates.stop_loss_price = data.stopLossPrice;
     if (data.takeProfitPrice !== undefined) updates.take_profit_price = data.takeProfitPrice;
     updates.updated_at = new Date().toISOString();
+
+    // Watching stocks don't use stop-loss/take-profit — clear stale values on transition
+    if (updates.status === 'watching') {
+        updates.stop_loss_price = null;
+        updates.take_profit_price = null;
+    }
 
     const { error } = await withRetry(() => supabase.from('stocks').update(updates).eq('id', id));
     if (error) throw error;
